@@ -55,40 +55,44 @@ export default function UsersPage() {
     };
     const handleEditUser = (user: any) => { console.log("Edit user:", user); /* TODO: Implement edit logic */ };
 
-  return (
-    <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
-        <div className="flex items-center justify-between">
+    // Main content render
+    return (
+        
+        <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+          <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
             {/* <Button size="sm">
                 <PlusCircle className="h-4 w-4 mr-2" />
                 Add User
             </Button> */}
-        </div>
-        <Separator />
-        <Card className="shadow-md rounded-lg">
+          </div>
+          <Separator />
+          <Card className="shadow-md rounded-lg">
             <CardHeader>
-                <CardTitle>Add User</CardTitle>
-                <CardDescription>Manage Users &amp; Roles</CardDescription>
+              <CardTitle>Add User</CardTitle>
+              <CardDescription>Manage Users &amp; Roles</CardDescription>
             </CardHeader>
             <CardContent>
-                <UserForm onSubmit={handleAddUser} /> {/* TODO: Implement UserForm */}
+              <UserForm onSubmit={handleAddUser} />
             </CardContent>
-        </Card>
-         <Card className="shadow-md rounded-lg">
+          </Card>
+           <Card className="shadow-md rounded-lg">
             <CardHeader>
-                <CardTitle>Security Warning</CardTitle>
-                <CardDescription><strong>Important:</strong> This user management system uses local storage and handles passwords in an insecure manner for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing.</CardDescription>
+              <CardTitle>Security Warning</CardTitle>
+              <CardDescription><strong>Important:</strong> This user management system uses local storage and handles passwords in an insecure manner for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing.</CardDescription>
             </CardHeader>
-        </Card>
-        {/* Main content / User list */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="md:col-span-1">
-                        
-                  </div>
-                  <div className="md:col-span-2">
-                      <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} /> {/* TODO: Implement UserList and handlers */}
-                  </div>
-              </div>
-    </div>
-  );
+          </Card>
+          {/* Main content / User list */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="md:col-span-1">
+                          
+                    </div>
+                    <div className="md:col-span-2">
+                        <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} />
+                    </div>
+                </div>
+        </div>
+        
+    );
 }
+
