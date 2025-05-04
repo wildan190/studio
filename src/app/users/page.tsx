@@ -16,14 +16,18 @@ export default function UsersPage() {
   // Loading state (consider a more robust loading indicator)
   if (!isClient || !authChecked) {
     return (
-      <div className="flex flex-1 flex-col p-4 md:p-6 space-y-4">
-        <div className="h-10 w-48 bg-muted rounded-lg animate-pulse"></div>
-        <div className="h-64 bg-muted rounded-lg animate-pulse"></div>
-        <footer className="mt-12 text-center text-muted-foreground text-sm">
-          <Separator className="my-4" />
-          Loading User Management...
-        </footer>
-      </div>
+      
+        
+          
+            
+              User Management
+            
+          
+          
+            Loading User Management...
+          
+        
+      
     );
   }
 
@@ -31,10 +35,12 @@ export default function UsersPage() {
   if (currentUser?.role !== 'superadmin') {
     // This shouldn't be reached if redirect logic works, but acts as a fallback
     return (
-      <div className="p-4 md:p-6"> {/* Use a div for padding */}
-        <h1 className="text-2xl font-semibold tracking-tight text-destructive">Access Denied</h1>
-        <p className="text-muted-foreground">You do not have permission to view this page.</p>
-      </div>
+      
+        
+          Access Denied
+        
+        You do not have permission to view this page.
+      
     );
   }
 
@@ -59,10 +65,9 @@ export default function UsersPage() {
             
               User Management
             
-             {/* <Button size="sm">
-                  <PlusCircle className="h-4 w-4 mr-2" />
+             {/* 
                   Add User
-              </Button> */}
+              
               {/* TODO: Implement Add User Modal/Form Trigger */}
            
         
@@ -85,14 +90,13 @@ export default function UsersPage() {
             <p className="text-muted-foreground italic">User list and form components will be implemented here.</p>
             <p className="mt-2 text-muted-foreground">Current user count: {users.length}</p>
             {/*
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
+            
+                      {/* {/* <UserForm onSubmit={handleAddUser} /> {/* TODO: Implement UserForm */} */}
                 
-                      {/* <UserForm onSubmit={handleAddUser} /> {/* TODO: Implement UserForm */}
                 
+                    {/* {/* <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} /> {/* TODO: Implement UserList and handlers */} */}
                 
-                    {/* <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} /> {/* TODO: Implement UserList and handlers */}
-                
-            </div>
+            
             */}
           
         
