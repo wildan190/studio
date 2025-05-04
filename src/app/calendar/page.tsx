@@ -46,25 +46,33 @@ export default function CalendarPage() {
 
     // Custom day cell renderer to show budget markers
     const renderDay = (day: Date) => {
-        // Validate the date before formatting
+        // Validate the date before formatting. react-day-picker might pass invalid dates/objects for layout.
         if (!day || !isValid(day)) {
-             console.error("Invalid date passed to renderDay:", day);
-             return <div className="relative flex flex-col items-center justify-center h-full">?</div>; // Return placeholder for invalid date
+             // Do not log an error here, as it might be expected behavior from the library for non-date cells.
+             // console.error("Invalid date passed to renderDay:", day);
+             // Return an empty div for invalid/placeholder cells to avoid showing "?"
+             return <div className="relative flex flex-col items-center justify-center h-full text-muted-foreground text-xs"></div>;
          }
 
         const dateString = format(day, 'yyyy-MM-dd');
+        // Ensure budgetEvents dates are also valid before comparison
         const budgetsDueOnDay = budgetEvents.filter(event => isValid(event.date) && format(event.date, 'yyyy-MM-dd') === dateString);
 
         return (
-            <div className="relative flex flex-col items-center justify-center h-full">
-                <span>{format(day, 'd')}</span>
+            <div className="relative flex flex-col items-center justify-center h-full group"> {/* Added group for potential hover effects */}
+                 {/* Default day number rendering */}
+                 <span className={cn(
+                     "group-hover:font-semibold", // Example hover effect
+                 )}>{format(day, 'd')}</span>
+
+                {/* Budget markers */}
                 {budgetsDueOnDay.length > 0 && (
                     <div className="absolute bottom-1 flex space-x-1">
                         {budgetsDueOnDay.slice(0, 3).map((_, index) => ( // Show max 3 dots
-                            <span key={index} className="block h-1.5 w-1.5 rounded-full bg-primary"></span>
+                            <span key={index} className="block h-1.5 w-1.5 rounded-full bg-primary transition-transform duration-200 group-hover:scale-125"></span> // Added hover effect
                         ))}
                          {budgetsDueOnDay.length > 3 && (
-                            <span className="block h-1.5 w-1.5 rounded-full bg-muted-foreground"></span> // Indicate more items
+                            <span className="block h-1.5 w-1.5 rounded-full bg-muted-foreground transition-transform duration-200 group-hover:scale-125"></span> // Indicate more items + hover effect
                         )}
                     </div>
                 )}
