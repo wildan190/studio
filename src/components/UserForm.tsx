@@ -1,6 +1,8 @@
+
 "use client";
 
 import * as React from "react";
+import { useEffect } from "react"; // Import useEffect
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -22,33 +24,63 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import type { Role } from "@/types";
+import type { Role, User } from "@/types";
 
-const userFormSchema = z.object({
+// Schema for adding a user (password required)
+const addUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   password: z.string().min(6, "Password must be at least 6 characters"),
   role: z.enum(["superadmin", "user"], { required_error: "Role is required" }),
 });
 
-type UserFormValues = z.infer<typeof userFormSchema>;
+// Schema for editing a user (password optional)
+const editUserSchema = z.object({
+    username: z.string().min(3, "Username must be at least 3 characters"),
+    password: z.string().min(6, "Password must be at least 6 characters").optional().or(z.literal('')), // Allow empty string or min 6 chars
+    role: z.enum(["superadmin", "user"], { required_error: "Role is required" }),
+});
+
+type AddUserFormValues = z.infer<typeof addUserSchema>;
+type EditUserFormValues = z.infer<typeof editUserSchema>;
 
 interface UserFormProps {
-  onSubmit: (data: {username: string, password: string, role: Role}) => void;
+  onSubmit: (data: AddUserFormValues | EditUserFormValues) => void;
+  initialData?: User | null; // Make initialData optional and accept null
+  onCancel?: () => void; // Optional cancel handler
 }
 
-export function UserForm({ onSubmit }: UserFormProps) {
-  const form = useForm<UserFormValues>({
-    resolver: zodResolver(userFormSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-      role: "user",
-    },
+export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormProps) {
+  const isEditing = !!initialData;
+  const formSchema = isEditing ? editUserSchema : addUserSchema;
+  type FormValues = z.infer<typeof formSchema>;
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: isEditing
+      ? { username: initialData.username, password: "", role: initialData.role } // Set initial values for edit
+      : { username: "", password: "", role: "user" }, // Default for add
   });
 
-  const handleSubmit = (values: UserFormValues) => {
+   // Effect to reset form when initialData changes (e.g., selecting a different user to edit or cancelling)
+   useEffect(() => {
+     if (initialData) {
+       form.reset({
+         username: initialData.username,
+         password: "", // Always clear password field on edit start
+         role: initialData.role,
+       });
+     } else {
+       form.reset({ username: "", password: "", role: "user" }); // Reset to default add state
+     }
+   }, [initialData, form]);
+
+
+  const handleSubmit = (values: FormValues) => {
     onSubmit(values);
-    form.reset(); // Reset form after successful submission
+    if (!isEditing) { // Only reset fully if adding
+        form.reset();
+    }
+    // Resetting after edit is handled by the parent component via initialData change
   };
 
   return (
@@ -73,9 +105,9 @@ export function UserForm({ onSubmit }: UserFormProps) {
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Password</FormLabel>
+              <FormLabel>{isEditing ? 'New Password (optional)' : 'Password'}</FormLabel>
               <FormControl>
-                <Input type="password" placeholder="Enter password" {...field} />
+                <Input type="password" placeholder={isEditing ? "Leave blank to keep current" : "Enter password"} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -88,7 +120,7 @@ export function UserForm({ onSubmit }: UserFormProps) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Role</FormLabel>
-                 <Select onValueChange={field.onChange} defaultValue={field.value}>
+                 <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
                     <FormControl>
                         <SelectTrigger>
                         <SelectValue placeholder="Select role" />
@@ -103,8 +135,16 @@ export function UserForm({ onSubmit }: UserFormProps) {
             </FormItem>
           )}
         />
-
-        <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">Add User</Button>
+        <div className="flex flex-col sm:flex-row gap-2">
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
+                {isEditing ? 'Update User' : 'Add User'}
+            </Button>
+             {isEditing && onCancel && ( // Show cancel button only when editing
+                 <Button type="button" variant="outline" onClick={onCancel} className="w-full">
+                 Cancel Edit
+                 </Button>
+             )}
+        </div>
       </form>
     </Form>
   );

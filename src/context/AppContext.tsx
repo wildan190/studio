@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
@@ -10,6 +11,10 @@ import { toast } from '@/hooks/use-toast';
 // Define a state to hold the dynamically imported uuid function
 let generateUuid: typeof uuidv4 | null = null;
 
+// Type for update data (password optional)
+type UserUpdateData = Partial<Pick<User, 'username' | 'role'>> & { password?: string };
+
+
 interface AppContextProps {
   transactions: Transaction[];
   budgets: Budget[];
@@ -21,8 +26,9 @@ interface AppContextProps {
   handleDeleteBudget: (id: string) => void;
   login: (username: string, passwordAttempt: string) => boolean; // Add login function
   logout: () => void; // Add logout function
-  addUser: (data: Omit<User, 'id' | 'passwordHash'> & {password: string}) => boolean; // Add addUser function (Admin only)
-  // TODO: Add functions for updating/deleting users and managing roles (Admin only)
+  addUser: (data: Omit<User, 'id' | 'passwordHash'> & {password: string}) => boolean;
+  updateUser: (id: string, data: UserUpdateData) => boolean; // Add updateUser function
+  deleteUser: (id: string) => boolean; // Add deleteUser function
   isClient: boolean; // Flag to indicate client-side readiness
   uuidLoaded: boolean; // Flag to indicate uuid readiness
   authChecked: boolean; // Flag to indicate initial auth check completed
@@ -175,6 +181,84 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         return true;
     }, [currentUser, users, setUsers, generateUuid]);
 
+    // Update User (Admin Only)
+    const updateUser = useCallback((id: string, data: UserUpdateData): boolean => {
+        if (currentUser?.role !== 'superadmin') {
+            toast({ title: "Permission Denied", description: "Only admins can update users.", variant: "destructive"});
+            return false;
+        }
+
+        const userIndex = users.findIndex(u => u.id === id);
+        if (userIndex === -1) {
+            toast({ title: "Error", description: "User not found.", variant: "destructive"});
+            return false;
+        }
+
+        // Check for username conflict if username is being changed
+        if (data.username && data.username !== users[userIndex].username && users.some(u => u.username.toLowerCase() === data.username?.toLowerCase() && u.id !== id)) {
+            toast({ title: "Error", description: "Username already exists.", variant: "destructive"});
+            return false;
+        }
+
+        setUsers(prevUsers => {
+            const updatedUsers = [...prevUsers];
+            const userToUpdate = updatedUsers[userIndex];
+            updatedUsers[userIndex] = {
+                ...userToUpdate,
+                username: data.username ?? userToUpdate.username,
+                role: data.role ?? userToUpdate.role,
+                // Update passwordHash only if a new password is provided
+                passwordHash: data.password ? data.password : userToUpdate.passwordHash, // !! INSECURE !!
+            };
+
+             // If the updated user is the current user, update currentUser state
+             if (currentUser?.id === id) {
+                setCurrentUser(updatedUsers[userIndex]);
+             }
+
+            return updatedUsers;
+        });
+
+        toast({ title: "User Updated", description: `User ${data.username ?? users[userIndex].username} updated successfully.` });
+        return true;
+    }, [currentUser, users, setUsers]); // Removed currentUser from dependency array inner scope
+
+     // Delete User (Admin Only)
+     const deleteUser = useCallback((id: string): boolean => {
+         if (currentUser?.role !== 'superadmin') {
+             toast({ title: "Permission Denied", description: "Only admins can delete users.", variant: "destructive" });
+             return false;
+         }
+
+         const userToDelete = users.find(u => u.id === id);
+
+         if (!userToDelete) {
+              toast({ title: "Error", description: "User not found.", variant: "destructive"});
+              return false;
+         }
+
+         // Prevent deleting self (redundant with UI check, but good safeguard)
+         if (userToDelete.id === currentUser.id) {
+              toast({ title: "Error", description: "Cannot delete your own account.", variant: "destructive"});
+              return false;
+         }
+
+         // Prevent deleting the last superadmin
+          if (userToDelete.role === 'superadmin') {
+              const superadminCount = users.filter(u => u.role === 'superadmin').length;
+              if (superadminCount <= 1) {
+                  toast({ title: "Action Prohibited", description: "Cannot delete the last superadmin.", variant: "destructive"});
+                  return false;
+              }
+          }
+
+
+         setUsers(prevUsers => prevUsers.filter(user => user.id !== id));
+         toast({ title: "User Deleted", description: `User ${userToDelete.username} has been deleted.`, variant: "destructive" });
+         return true;
+     }, [currentUser, users, setUsers]);
+
+
   // --- Transaction and Budget Functions ---
   const handleAddTransaction = useCallback((data: Omit<Transaction, 'id'>) => {
     if (!generateUuid) {
@@ -241,7 +325,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             description: `Budget for ${data.category} (${data.period}) set to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
           });
      }
-   }, [budgets, setBudgets]);
+   }, [budgets, setBudgets, generateUuid]); // Added generateUuid dependency
 
   const handleDeleteBudget = useCallback((id: string) => {
     const budgetToDelete = budgets.find(b => b.id === id);
@@ -263,6 +347,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     login, // Expose login
     logout, // Expose logout
     addUser, // Expose addUser
+    updateUser, // Expose updateUser
+    deleteUser, // Expose deleteUser
     handleAddTransaction,
     handleDeleteTransaction,
     handleAddBudget,
