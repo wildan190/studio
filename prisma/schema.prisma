@@ -7,22 +7,23 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Ensure the DATABASE_URL environment variable is set
   url      = env("DATABASE_URL")
 }
 
 // --- User Model ---
 model User {
-  id           String        @id @default(uuid())
-  username     String        @unique
-  passwordHash String
-  role         Role          @default(user)
-  permissions  Json          @default("[]") // Store permissions as a JSON array of strings
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  transactions Transaction[] // Relation to Transaction model
-  budgets      Budget[]      // Relation to Budget model
+  id           String   @id @default(uuid())
+  username     String   @unique // Ensure usernames are unique
+  passwordHash String   @db.Text
+  role         Role     @default(user) // Default role is 'user'
+  permissions  Json     @default("[]") // Store permissions as JSON, defaulting to empty array
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt // Prisma automatically handles updated_at
 
-  @@map("users") // Explicitly map to 'users' table
+  // Relations
+  transactions Transaction[] // One user can have many transactions
+  budgets      Budget[]      // One user can have many budgets
 }
 
 enum Role {
@@ -33,16 +34,18 @@ enum Role {
 // --- Transaction Model ---
 model Transaction {
   id          String          @id @default(uuid())
-  userId      String // Foreign key to User model
-  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type        TransactionType
+  type        TransactionType // 'income' or 'expense'
   description String          @db.Text // Store original case, handle matching case-insensitively in application code
   amount      Decimal         @db.Decimal(12, 2) // Use Decimal for financial values
-  date        DateTime        @db.Timestamp(3) // Use Timestamp for date and time
+  date        DateTime        @db.Date // Store only the date part
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  @@map("transactions") // Explicitly map to 'transactions' table
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade) // Cascade deletes transactions if user is deleted
+
+  @@index([userId, date]) // Index for querying transactions by user and date
 }
 
 enum TransactionType {
@@ -52,19 +55,21 @@ enum TransactionType {
 
 // --- Budget Model ---
 model Budget {
-  id        String       @id @default(uuid())
-  userId    String // Foreign key to User model
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  category  String       // Store original case, handle matching case-insensitively in application code
-  amount    Decimal      @db.Decimal(12, 2)
-  period    BudgetPeriod
+  id       String       @id @default(uuid())
+  category String       // Store original case, handle matching case-insensitively in application code
+  amount   Decimal      @db.Decimal(12, 2)
+  period   BudgetPeriod // 'monthly' or 'yearly'
+  dueDate  DateTime?    @db.Date // Optional due date for the budget item
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
-  // Unique constraint for user, category (case-insensitive handled in application), and period
-  // Note: DB level case-insensitive unique constraints are complex. We handle upsert logic in the action.
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade) // Cascade deletes budgets if user is deleted
+
+  // Unique constraint for user, category, and period to prevent duplicates
   @@unique([userId, category, period])
-  @@map("budgets") // Explicitly map to 'budgets' table
+  @@index([userId, period]) // Index for querying budgets by user and period
 }
 
 enum BudgetPeriod {

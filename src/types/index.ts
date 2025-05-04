@@ -20,6 +20,7 @@ export interface Budget {
   category: string; // Matches expense transaction description/category
   amount: number; // Use number in the application type (converted from Decimal)
   period: BudgetPeriod;
+  dueDate?: Date | null; // Optional due date, map from DateTime?
    // userId is usually not needed directly on the client budget object
   // userId?: string;
 }

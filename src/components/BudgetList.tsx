@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { format } from 'date-fns';
 import { Trash2, Edit } from "lucide-react";
 import {
   Table,
@@ -70,6 +71,7 @@ export function BudgetList({
                 <TableRow>
                     <TableHead>Category</TableHead>
                     <TableHead>Period</TableHead>
+                    <TableHead>Due Date</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                 </TableRow>
@@ -81,6 +83,9 @@ export function BudgetList({
                         <TableCell className="font-medium">{budget.category}</TableCell>
                         <TableCell>
                             <Badge variant="outline" className="capitalize">{budget.period}</Badge>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                            {budget.dueDate ? format(budget.dueDate, "PPP") : "N/A"}
                         </TableCell>
                         <TableCell className="text-right font-semibold">
                             {formatCurrency(budget.amount)}
@@ -123,7 +128,7 @@ export function BudgetList({
                     ))
                  ) : (
                     <TableRow>
-                         <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                         <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
                             No budgets on this page.
                          </TableCell>
                      </TableRow>

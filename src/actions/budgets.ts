@@ -15,6 +15,7 @@ const BudgetSchema = z.object({
   category: z.string(),
   amount: z.instanceof(Decimal), // Expect Prisma Decimal type
   period: z.nativeEnum(PrismaBudgetPeriod), // Use Prisma enum
+  dueDate: z.date().optional().nullable(), // Add dueDate
   userId: z.string().uuid(), // Renamed from user_id
 });
 
@@ -23,6 +24,7 @@ const AddBudgetInputSchema = z.object({
   // Use number for input coercion, Prisma handles conversion to Decimal
   amount: z.coerce.number().positive('Budget amount must be positive'),
   period: z.nativeEnum(PrismaBudgetPeriod, { required_error: 'Period is required' }),
+  dueDate: z.date({ coerce: true }).optional().nullable(), // Add dueDate, allow null, coerce string/number to Date
   userId: z.string().uuid('User ID is required'),
 });
 type AddBudgetInput = z.infer<typeof AddBudgetInputSchema>;
@@ -36,6 +38,7 @@ const mapPrismaBudgetToApp = (prismaBudget: NonNullable<Awaited<ReturnType<typeo
     category: prismaBudget.category,
     amount: prismaBudget.amount.toNumber(), // Convert Prisma Decimal to number
     period: prismaBudget.period as AppBudgetPeriod, // Cast to AppBudgetPeriod
+    dueDate: prismaBudget.dueDate ? new Date(prismaBudget.dueDate) : null, // Map dueDate
 });
 
 // --- Server Actions ---
@@ -69,7 +72,7 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
      console.error('addOrUpdateBudgetAction validation failed:', validation.error.errors);
      throw new Error(`Invalid budget data: ${validation.error.errors.map(e => e.message).join(', ')}`);
    }
-  const { category, amount, period, userId } = validation.data;
+  const { category, amount, period, dueDate, userId } = validation.data;
   const categoryLower = category.toLowerCase(); // For case-insensitive check
 
   try {
@@ -101,6 +104,7 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
         data: {
           amount: amount, // Prisma accepts number, converts to Decimal
           category: category, // Update category to potentially fix casing
+          dueDate: dueDate, // Update dueDate
           updatedAt: new Date(), // Ensure updated_at is set
         },
       });
@@ -113,6 +117,7 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
           category: category, // Store original casing
           amount: amount, // Prisma accepts number, converts to Decimal
           period: period,
+          dueDate: dueDate, // Set dueDate
         },
       });
       console.log(`Created new budget for category: ${category} (${period})`);
@@ -121,6 +126,7 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
     revalidatePath('/budgets');
     revalidatePath('/');
     revalidatePath('/reports');
+    revalidatePath('/calendar'); // Revalidate calendar page
     return mapPrismaBudgetToApp(upsertedBudget);
 
   } catch (error: any) { // Catch specific Prisma error
@@ -156,6 +162,7 @@ export async function deleteBudgetAction(id: string, userId: string): Promise<vo
          revalidatePath('/budgets'); // Revalidate even if not found, to update the list
          revalidatePath('/');
          revalidatePath('/reports');
+         revalidatePath('/calendar'); // Revalidate calendar page
          return;
          // throw new Error('Budget not found.');
      }
@@ -171,6 +178,7 @@ export async function deleteBudgetAction(id: string, userId: string): Promise<vo
     revalidatePath('/budgets');
     revalidatePath('/');
     revalidatePath('/reports');
+    revalidatePath('/calendar'); // Revalidate calendar page
   } catch (error: any) {
     console.error('Error deleting budget with Prisma:', error);
     if (error.code === 'P2025') { // Record to delete not found
@@ -179,6 +187,7 @@ export async function deleteBudgetAction(id: string, userId: string): Promise<vo
         revalidatePath('/budgets');
         revalidatePath('/');
         revalidatePath('/reports');
+        revalidatePath('/calendar'); // Revalidate calendar page
     } else if (error instanceof Error && (error.message.includes('not found') || error.message.includes('permission'))) {
         throw error; // Re-throw specific known errors
     } else {

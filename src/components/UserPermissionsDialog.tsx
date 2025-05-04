@@ -14,7 +14,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import type { User } from "@/types";
-import { MANAGEABLE_PATHS } from "@/lib/constants";
+import { MANAGEABLE_PATHS, DEFAULT_ALLOWED_PATHS } from "@/lib/constants"; // Import updated constants
 import { useAppContext } from "@/context/AppContext"; // Import context
 
 
@@ -31,7 +31,7 @@ export function UserPermissionsDialog({ user, isOpen, onClose, onSave }: UserPer
 
   useEffect(() => {
     if (user) {
-       // Ensure we use the permissions from the user object, default if undefined
+       // Ensure we use the permissions from the user object, default if undefined or null
        setSelectedPermissions(user.permissions || (user.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS));
     } else {
         setSelectedPermissions([]);
@@ -77,11 +77,13 @@ export function UserPermissionsDialog({ user, isOpen, onClose, onSave }: UserPer
           {MANAGEABLE_PATHS.map(({ path, label }) => {
               // Disable checkbox for '/' if user is not superadmin, as it's always required
               const isDisabled = isSuperAdmin || (path === '/' && !isSuperAdmin) || isMutating;
+              // Superadmins are always checked and disabled
+              const isChecked = isSuperAdmin || selectedPermissions.includes(path);
               return (
                   <div key={path} className="flex items-center space-x-2">
                       <Checkbox
                           id={`permission-${path.replace('/', '')}`}
-                          checked={selectedPermissions.includes(path)}
+                          checked={isChecked}
                           onCheckedChange={(checked) => handleCheckboxChange(path, checked)}
                           disabled={isDisabled}
                       />

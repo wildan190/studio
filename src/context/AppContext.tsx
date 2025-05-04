@@ -17,7 +17,8 @@ type UserUpdateData = Partial<Pick<User, 'username' | 'role'>> & { password?: st
 
 // Adjust input types for actions if they changed with Prisma
 type AddTransactionInputContext = Omit<Transaction, 'id'> & { userId: string };
-type AddBudgetInputContext = Omit<Budget, 'id'> & { userId: string };
+// Ensure AddBudgetInputContext includes dueDate (make it optional/nullable)
+type AddBudgetInputContext = Omit<Budget, 'id'> & { userId: string; dueDate?: Date | null };
 type AddUserInputContext = Omit<User, 'id' | 'passwordHash' | 'permissions'> & { password: string };
 
 interface AppContextProps {
@@ -73,9 +74,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             ];
             const [fetchedTransactions, fetchedBudgets, fetchedUsers] = await Promise.all(fetchPromises);
 
-            // Ensure dates are Date objects (Prisma might return strings if not properly mapped)
+            // Ensure dates are Date objects
             setTransactions(fetchedTransactions.map(t => ({ ...t, date: new Date(t.date) })));
-            setBudgets(fetchedBudgets);
+             setBudgets(fetchedBudgets.map(b => ({ ...b, dueDate: b.dueDate ? new Date(b.dueDate) : null }))); // Map dueDate
             setUsers(fetchedUsers); // Contains users only if admin fetched them
 
             console.log(`AppContext: Data fetched. T: ${fetchedTransactions.length}, B: ${fetchedBudgets.length}, U: ${fetchedUsers.length}`);
@@ -101,58 +102,50 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 
   useEffect(() => {
-    if (!isClient) return; // Run only after client mount
+    if (!isClient || authChecked) return; // Run only once after client mount if auth not checked
 
     const checkAuth = async () => {
-        if (authChecked) {
-            console.log("AppContext: Auth already checked, skipping.");
-            return; // Avoid re-running if already checked
-        }
-
         console.log("AppContext: Checking authentication status...");
-        setIsLoading(true); // Start loading during auth check
+        setIsLoading(true);
         let user: User | null = null;
+        // Renamed key to avoid conflict with previous attempts
         const storedUserDetails = sessionStorage.getItem("bizflow_currentUser_details");
 
         if (storedUserDetails) {
             try {
                 const parsedUser = JSON.parse(storedUserDetails) as User;
-                // Basic validation (can add more checks, e.g., re-fetch from DB to ensure validity)
                 if (parsedUser && parsedUser.id && parsedUser.username && parsedUser.role) {
-                    user = parsedUser;
-                     console.log(`AppContext: User found in session storage: ${user.username} (ID: ${user.id}, Role: ${user.role})`);
-                     // Ensure permissions are correctly loaded/set
-                     if (!user.permissions) {
-                        user.permissions = user.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS;
-                        console.log("AppContext: User permissions reset based on role.");
-                     }
+                    // Assign permissions based on role if not present (backward compatibility)
+                    const permissions = parsedUser.permissions || (parsedUser.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS);
+                    user = { ...parsedUser, permissions };
+                    console.log(`AppContext: User found in session: ${user.username} (Role: ${user.role})`);
                 } else {
-                     console.warn("AppContext: Invalid user data found in session storage.");
-                     sessionStorage.removeItem("bizflow_currentUser_details");
+                    console.warn("AppContext: Invalid user data in session storage.");
+                    sessionStorage.removeItem("bizflow_currentUser_details");
                 }
             } catch (error) {
-                 console.error("AppContext: Error parsing user session details:", error);
-                 sessionStorage.removeItem("bizflow_currentUser_details");
+                console.error("AppContext: Error parsing user session details:", error);
+                sessionStorage.removeItem("bizflow_currentUser_details");
             }
         } else {
-             console.log("AppContext: No user details found in session storage.");
+            console.log("AppContext: No user details in session storage.");
         }
 
         setCurrentUser(user);
-        setAuthChecked(true); // Mark auth check as complete HERE
+        setAuthChecked(true); // Mark auth check complete
         console.log("AppContext: Auth check complete. Current user:", user?.username ?? 'None');
 
-        // Fetch initial data based on whether a user is logged in
         if (user) {
-            await fetchData(user.id, user.role); // Pass user ID and role
+            await fetchData(user.id, user.role);
         } else {
-            setIsLoading(false); // No user, stop loading
+            setIsLoading(false);
         }
     };
 
     checkAuth();
 
-  }, [isClient, authChecked, fetchData]); // Run when client ready OR authChecked changes (to prevent re-run)
+  }, [isClient, authChecked, fetchData]); // Dependencies: isClient, authChecked, fetchData
+
 
     // Effect 2: Redirect Logic - Runs after auth state is potentially set
     useEffect(() => {
@@ -162,6 +155,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const publicPaths = ['/login'];
         const pathIsPublic = publicPaths.includes(pathname);
         const pathIsUsers = pathname.startsWith('/users');
+        const pathIsCalendar = pathname.startsWith('/calendar'); // Check for calendar path
 
         console.log(`AppContext Redirect Check: Path=${pathname}, Public=${pathIsPublic}, User=${currentUser?.username}, Role=${currentUser?.role}, AuthChecked=${authChecked}`);
 
@@ -175,14 +169,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             console.log("AppContext: Redirecting to dashboard (attempting to access /users without superadmin role).");
              toast({ title: "Access Denied", description: "You do not have permission to access the User Management page.", variant: "destructive"});
             router.push('/');
+        } else if (currentUser && pathIsCalendar && !(currentUser.role === 'superadmin' || currentUser.permissions?.includes('/calendar'))) {
+            // Redirect if trying to access calendar without permission
+            console.log("AppContext: Redirecting to dashboard (attempting to access /calendar without permission).");
+            toast({ title: "Access Denied", description: "You do not have permission to access the Calendar page.", variant: "destructive"});
+            router.push('/');
         }
-        // Permission checks for other pages are handled in ClientLayout
+        // Other specific page permission checks are handled in ClientLayout
 
     }, [isClient, authChecked, currentUser, pathname, router]);
 
 
   // --- Auth Functions ---
   const login = useCallback(async (username: string, passwordAttempt: string): Promise<boolean> => {
+    let success = false; // Variable to track success
     startTransition(async () => { // Wrap in transition
         try {
           console.log(`AppContext: Attempting login for user: ${username}`);
@@ -193,15 +193,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             if (isValid) {
               // Exclude password hash before storing/setting state
               const { passwordHash, ...userToStore } = userWithHash;
+              // Ensure permissions are set correctly
+              const permissions = userToStore.permissions || (userToStore.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS);
+              const finalUser = { ...userToStore, permissions };
+
               console.log(`AppContext: Login successful for ${username}. Storing user details.`);
-              setCurrentUser(userToStore);
-              // Store necessary details (like ID, username, role, permissions) in session storage
-              sessionStorage.setItem("bizflow_currentUser_details", JSON.stringify(userToStore));
-              toast({ title: "Login Successful", description: `Welcome back, ${userToStore.username}!` });
+              setCurrentUser(finalUser);
+              // Store necessary details in session storage
+              sessionStorage.setItem("bizflow_currentUser_details", JSON.stringify(finalUser));
+              toast({ title: "Login Successful", description: `Welcome back, ${finalUser.username}!` });
               setAuthChecked(true); // Mark auth as checked
-              await fetchData(userToStore.id, userToStore.role); // Fetch data for the logged-in user
+              await fetchData(finalUser.id, finalUser.role); // Fetch data for the logged-in user
               router.push('/'); // Redirect after state update and data fetch attempt
-              // return true; // Cannot return boolean from transition
+              success = true; // Set success to true
             } else {
                  console.warn(`AppContext: Invalid password for user: ${username}`);
                  toast({ title: "Login Failed", description: "Invalid username or password.", variant: "destructive" });
@@ -209,7 +213,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                  sessionStorage.removeItem("bizflow_currentUser_details");
                  setAuthChecked(true);
                  setTransactions([]); setBudgets([]); setUsers([]);
-                 // return false;
+                 success = false;
             }
           } else {
              console.warn(`AppContext: User not found: ${username}`);
@@ -218,7 +222,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
              sessionStorage.removeItem("bizflow_currentUser_details");
              setAuthChecked(true);
              setTransactions([]); setBudgets([]); setUsers([]);
-             // return false;
+             success = false;
           }
         } catch (error) {
           console.error("AppContext: Login error:", error);
@@ -227,10 +231,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           sessionStorage.removeItem("bizflow_currentUser_details");
           setAuthChecked(true);
            setTransactions([]); setBudgets([]); setUsers([]);
-          // return false;
+           success = false;
         }
     });
-    return Promise.resolve(true); // Return promise immediately due to transition
+    // The promise now resolves based on the success variable, but be aware of the async nature of startTransition
+    // This might not perfectly reflect the *instant* result, but indicates intent.
+    return Promise.resolve(success);
   }, [router, fetchData]);
 
   const logout = useCallback(() => {
@@ -304,19 +310,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
        startTransition(async () => {
           try {
               console.log("AppContext: Adding/Updating budget...", data);
-              const upsertedBudget = await addOrUpdateBudgetAction({ ...data, userId: currentUser.id }); // Action uses Prisma
+               // Ensure dueDate is passed correctly (can be null)
+              const budgetData = {
+                    ...data,
+                    dueDate: data.dueDate ? new Date(data.dueDate) : null, // Handle potential string/date and null
+                    userId: currentUser.id
+                };
+              const upsertedBudget = await addOrUpdateBudgetAction(budgetData); // Action uses Prisma
+                // Ensure returned dueDate is also a Date object or null
+              const mappedBudget = { ...upsertedBudget, dueDate: upsertedBudget.dueDate ? new Date(upsertedBudget.dueDate) : null };
               setBudgets(prevBudgets => {
-                   const index = prevBudgets.findIndex(b => b.category.toLowerCase() === upsertedBudget.category.toLowerCase() && b.period === upsertedBudget.period);
+                   const index = prevBudgets.findIndex(b => b.category.toLowerCase() === mappedBudget.category.toLowerCase() && b.period === mappedBudget.period);
                     if (index !== -1) {
                         const updated = [...prevBudgets];
-                        updated[index] = upsertedBudget;
+                        updated[index] = mappedBudget;
                         return updated.sort((a, b) => a.category.localeCompare(b.category));
                     } else {
-                        // If it's a new budget, ensure it's added correctly
-                         return [...prevBudgets, upsertedBudget].sort((a, b) => a.category.localeCompare(b.category));
+                         return [...prevBudgets, mappedBudget].sort((a, b) => a.category.localeCompare(b.category));
                     }
                });
-               toast({ title: "Budget Saved", description: `Budget for ${upsertedBudget.category} saved.` });
+               toast({ title: "Budget Saved", description: `Budget for ${mappedBudget.category} saved.` });
                console.log("AppContext: Budget saved successfully.");
           } catch (error) {
               console.error("AppContext: Failed to save budget:", error);
@@ -339,6 +352,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                  await deleteBudgetAction(id, currentUser.id); // Action uses Prisma
                  toast({ title: "Budget Deleted", variant: "destructive" });
                  console.log("AppContext: Budget deleted successfully.");
+                 // Revalidate paths including calendar in the server action
             } catch (error) {
                 console.error("AppContext: Failed to delete budget:", error);
                 toast({ title: "Error", description: error instanceof Error ? error.message : "Could not delete budget.", variant: "destructive" });

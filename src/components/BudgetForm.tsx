@@ -5,6 +5,8 @@ import * as React from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { format } from "date-fns";
+import { Calendar as CalendarIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -23,14 +25,22 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
 import type { Budget, BudgetPeriod } from "@/types";
 import { toast } from "@/hooks/use-toast";
 import { useAppContext } from "@/context/AppContext"; // Import context
+import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
   category: z.string().min(1, "Category is required"),
   amount: z.coerce.number().positive("Budget amount must be positive"),
   period: z.enum(["monthly", "yearly"], { required_error: "Period is required" }),
+  dueDate: z.date().optional().nullable(), // Add dueDate, allow null
 });
 
 type BudgetFormValues = z.infer<typeof formSchema>;
@@ -49,6 +59,7 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
       category: "",
       amount: 0,
       period: "monthly",
+      dueDate: null, // Initialize dueDate as null
     },
   });
 
@@ -111,6 +122,58 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
             </FormItem>
           )}
         />
+
+         <FormField
+            control={form.control}
+            name="dueDate"
+            render={({ field }) => (
+                <FormItem className="flex flex-col">
+                <FormLabel>Due Date (Optional)</FormLabel>
+                <Popover>
+                    <PopoverTrigger asChild>
+                    <FormControl>
+                        <Button
+                        variant={"outline"}
+                        className={cn(
+                            "w-full pl-3 text-left font-normal",
+                            !field.value && "text-muted-foreground"
+                        )}
+                        disabled={isMutating}
+                        >
+                        {field.value ? (
+                            format(field.value, "PPP")
+                        ) : (
+                            <span>Pick a due date</span>
+                        )}
+                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                    </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                        mode="single"
+                        selected={field.value || undefined} // Pass undefined if null
+                        onSelect={(date) => field.onChange(date || null)} // Set to null if date is cleared
+                        disabled={(date) => date < new Date("1900-01-01") || isMutating}
+                        initialFocus
+                    />
+                    </PopoverContent>
+                </Popover>
+                 <Button
+                    type="button"
+                    variant="link"
+                    size="sm"
+                    className="mt-1 h-auto p-0 text-xs self-start text-muted-foreground"
+                    onClick={() => field.onChange(null)} // Add button to clear the date
+                    disabled={isMutating || !field.value}
+                >
+                    Clear Date
+                 </Button>
+                <FormMessage />
+                </FormItem>
+            )}
+        />
+
 
         <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isMutating}>
              {isMutating ? 'Saving...' : 'Save Budget'}

@@ -7,6 +7,7 @@ export const MANAGEABLE_PATHS = [
     { path: '/transactions', label: 'Transactions' },
     { path: '/budgets', label: 'Budgets' },
     { path: '/reports', label: 'Reports' },
+    { path: '/calendar', label: 'Calendar' }, // Add Calendar path
 ];
 
 /**

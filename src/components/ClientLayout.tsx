@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link'; // Import Link
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation'; // Import useRouter
 import { useAppContext } from '@/context/AppContext'; // Import AppContext
 import {
   SidebarProvider,
@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button'; // Import Button
-import { Home, Briefcase, BarChart, List, LogOut, Users, ShieldAlert } from 'lucide-react'; // Added List, LogOut, Users icons
+import { Home, Briefcase, BarChart, List, LogOut, Users, ShieldAlert, CalendarDays } from 'lucide-react'; // Added CalendarDays icon
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'; // Import Card components
 
 export default function ClientLayout({
@@ -26,6 +26,7 @@ export default function ClientLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname(); // Get current path
+  const router = useRouter(); // Get router instance
   const { currentUser, logout, authChecked } = useAppContext(); // Get currentUser and logout from context
 
   // Don't render layout content until authentication check is complete
@@ -48,7 +49,6 @@ export default function ClientLayout({
        currentUser.role === 'superadmin' ||
        pathname === '/' || // All logged-in users can access dashboard
        pathname === '/login' || // Allow access to login page (though redirect handles this)
-       pathname === '/users' || // Role check is done elsewhere
        (currentUser.permissions?.includes(pathname));
 
 
@@ -101,6 +101,14 @@ export default function ClientLayout({
                      <SidebarMenuButton href="/reports" tooltip="Reports" isActive={pathname.startsWith('/reports')}>
                        <BarChart />
                        <span>Reports</span>
+                     </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
+             {currentUser.permissions?.includes('/calendar') && (
+                 <SidebarMenuItem>
+                     <SidebarMenuButton href="/calendar" tooltip="Calendar" isActive={pathname.startsWith('/calendar')}>
+                       <CalendarDays />
+                       <span>Calendar</span>
                      </SidebarMenuButton>
                  </SidebarMenuItem>
              )}
