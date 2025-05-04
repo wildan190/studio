@@ -99,7 +99,7 @@ export default function Home() {
           <div className="h-80 bg-muted rounded-lg animate-pulse"></div>
         </div>
       </div>
-    ) // Removed semicolon
+    );
   }
 
   return (
@@ -201,3 +201,4 @@ export default function Home() {
     </div>
   );
 }
+
