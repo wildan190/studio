@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -6,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { format } from 'date-fns';
+import { format, isValid } from 'date-fns'; // Import isValid
 import { cn } from '@/lib/utils';
 
 interface BudgetEvent {
@@ -23,10 +24,10 @@ export default function CalendarPage() {
 
     const budgetEvents = React.useMemo(() => {
         return budgets
-            .filter((budget) => budget.dueDate) // Only include budgets with a due date
+            .filter((budget) => budget.dueDate && isValid(new Date(budget.dueDate))) // Ensure dueDate is valid
             .map((budget) => ({
                 id: budget.id,
-                date: budget.dueDate!, // Assert non-null as we filtered
+                date: new Date(budget.dueDate!), // Assert non-null and ensure it's a Date object
                 title: `Budget: ${budget.category}`,
                 amount: budget.amount,
             }));
@@ -34,9 +35,9 @@ export default function CalendarPage() {
 
     // Filter events for the selected date
     const eventsForSelectedDate = React.useMemo(() => {
-        if (!selectedDate) return [];
+        if (!selectedDate || !isValid(selectedDate)) return []; // Check selectedDate validity
         const selectedDateString = format(selectedDate, 'yyyy-MM-dd');
-        return budgetEvents.filter(event => format(event.date, 'yyyy-MM-dd') === selectedDateString);
+        return budgetEvents.filter(event => isValid(event.date) && format(event.date, 'yyyy-MM-dd') === selectedDateString);
     }, [selectedDate, budgetEvents]);
 
     const formatCurrency = (value: number) => {
@@ -45,8 +46,14 @@ export default function CalendarPage() {
 
     // Custom day cell renderer to show budget markers
     const renderDay = (day: Date) => {
+        // Validate the date before formatting
+        if (!day || !isValid(day)) {
+             console.error("Invalid date passed to renderDay:", day);
+             return <div className="relative flex flex-col items-center justify-center h-full">?</div>; // Return placeholder for invalid date
+         }
+
         const dateString = format(day, 'yyyy-MM-dd');
-        const budgetsDueOnDay = budgetEvents.filter(event => format(event.date, 'yyyy-MM-dd') === dateString);
+        const budgetsDueOnDay = budgetEvents.filter(event => isValid(event.date) && format(event.date, 'yyyy-MM-dd') === dateString);
 
         return (
             <div className="relative flex flex-col items-center justify-center h-full">
@@ -107,6 +114,9 @@ export default function CalendarPage() {
          );
      }
 
+    // Ensure budgetEvents dates are valid Date objects before passing to Calendar modifiers
+    const validBudgetEventDates = budgetEvents.map(event => event.date).filter(date => isValid(date));
+
     return (
         <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
             <h1 className="text-2xl font-semibold tracking-tight">Budget Calendar</h1>
@@ -130,7 +140,7 @@ export default function CalendarPage() {
                                 }}
                                 modifiers={{
                                     // Highlight days with budget events
-                                    hasEvents: budgetEvents.map(event => event.date),
+                                    hasEvents: validBudgetEventDates, // Use validated dates
                                 }}
                                 modifiersClassNames={{
                                     hasEvents: 'font-bold text-primary', // Example styling
@@ -144,7 +154,7 @@ export default function CalendarPage() {
                      <Card className="shadow-md rounded-lg">
                          <CardHeader>
                              <CardTitle className="text-lg">
-                                 Events for {selectedDate ? format(selectedDate, 'PPP') : 'Selected Date'}
+                                 Events for {selectedDate && isValid(selectedDate) ? format(selectedDate, 'PPP') : 'Selected Date'}
                              </CardTitle>
                          </CardHeader>
                          <CardContent className="space-y-3 h-[350px] overflow-y-auto">
@@ -157,7 +167,7 @@ export default function CalendarPage() {
                                 ))
                              ) : (
                                  <p className="text-muted-foreground text-center py-4">
-                                    {selectedDate ? "No budget items due on this date." : "Select a date to view events."}
+                                    {selectedDate && isValid(selectedDate) ? "No budget items due on this date." : "Select a date to view events."}
                                  </p>
                              )}
                          </CardContent>
