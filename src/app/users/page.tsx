@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { PlusCircle } from "lucide-react";
+// Import user form and list components
 import { UserForm } from "@/components/UserForm";
 import { UserList } from "@/components/UserList";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -56,43 +57,46 @@ export default function UsersPage() {
 
   return (
     
-      <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
-          <Button size="sm">
-              <PlusCircle className="h-4 w-4 mr-2" />
+      
+        
+        
+          
+            User Management
+          
+          
+              
               Add User
-          </Button>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Manage Users &amp; Roles</CardTitle>
-            <CardDescription>Add, edit, or remove users and manage their access roles.</CardDescription>
-          </CardHeader>
-          <CardContent>
+          
+        
+        
+          
+            Manage Users &amp; Roles
+          
+          
+            Add, edit, or remove users and manage their access roles.
+          
+          
             
               
                 
-                  <UserForm onSubmit={handleAddUser} />
+                  
                 
                 
-                  <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} />
+                  
                 
               
             
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Security Warning</CardTitle>
-          </CardHeader>
-          <CardContent>
+          
+        
+        
+          
+            Security Warning
+          
+          
             <strong>Important:</strong> This user management system uses local storage and handles passwords in an insecure manner for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing.
-          </CardContent>
-        </Card>
-      </div>
+          
+        
+      
     
   );
 }
-
