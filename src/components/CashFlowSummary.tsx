@@ -17,7 +17,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"; // Import ChartContainer and ChartConfig
 import type { Transaction } from "@/types";
 
 interface CashFlowSummaryProps {
@@ -25,6 +25,22 @@ interface CashFlowSummaryProps {
 }
 
 type Period = "daily" | "weekly" | "monthly" | "yearly";
+
+// Define chart configuration
+const chartConfig = {
+    value: { // Corresponds to the dataKey used in the Bar component
+      label: "Amount", // Generic label, tooltip content handles specific labels
+    },
+    income: {
+        label: "Income",
+        color: "hsl(var(--chart-1))", // Teal
+    },
+    expenses: {
+        label: "Expenses",
+        color: "hsl(var(--destructive))", // Red
+    },
+} satisfies ChartConfig;
+
 
 export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
   const [period, setPeriod] = React.useState<Period>("monthly");
@@ -68,14 +84,16 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
 
   const netCashFlow = totalIncome - totalExpenses;
 
-  // Prepare data for the chart (simple income vs expense for the period)
+  // Prepare data for the chart
+  // Add key 'fill' for color and update 'name' to match chartConfig keys
   const chartData = [
-    { name: "Income", value: totalIncome, fill: "hsl(var(--chart-1))" }, // Teal
-    { name: "Expenses", value: totalExpenses, fill: "hsl(var(--destructive))" }, // Red
+    { name: "income", value: totalIncome, fill: "var(--color-income)" },
+    { name: "expenses", value: totalExpenses, fill: "var(--color-expenses)" },
   ];
 
   const formatCurrency = (value: number) => {
-        return value.toLocaleString("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 });
+        // Use Intl.NumberFormat for potentially better performance and consistency
+        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
     }
 
   return (
@@ -101,17 +119,18 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-          <div className="p-4 bg-green-100 rounded-md">
+          {/* Use CSS variables for background colors for better theme consistency */}
+          <div className="p-4 bg-[hsl(var(--chart-1)/0.1)] rounded-md">
             <p className="text-sm text-muted-foreground">Total Income</p>
-            <p className="text-xl font-bold text-green-700">{formatCurrency(totalIncome)}</p>
+            <p className="text-xl font-bold text-[hsl(var(--chart-1))]">{formatCurrency(totalIncome)}</p>
           </div>
-          <div className="p-4 bg-red-100 rounded-md">
+          <div className="p-4 bg-[hsl(var(--destructive)/0.1)] rounded-md">
             <p className="text-sm text-muted-foreground">Total Expenses</p>
-            <p className="text-xl font-bold text-red-700">{formatCurrency(totalExpenses)}</p>
+            <p className="text-xl font-bold text-[hsl(var(--destructive))]">{formatCurrency(totalExpenses)}</p>
           </div>
-          <div className={`p-4 rounded-md ${netCashFlow >= 0 ? 'bg-teal-100' : 'bg-gray-200'}`}>
+          <div className={`p-4 rounded-md ${netCashFlow >= 0 ? 'bg-[hsl(var(--primary)/0.1)]' : 'bg-muted'}`}>
             <p className="text-sm text-muted-foreground">Net Cash Flow</p>
-            <p className={`text-xl font-bold ${netCashFlow >= 0 ? 'text-teal-700' : 'text-gray-700'}`}>
+            <p className={`text-xl font-bold ${netCashFlow >= 0 ? 'text-primary' : 'text-foreground'}`}>
                 {formatCurrency(netCashFlow)}
             </p>
           </div>
@@ -119,21 +138,34 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
 
         {/* Chart */}
         {filteredTransactions.length > 0 && (
-            <div className="h-[200px] mt-6">
+            <ChartContainer config={chartConfig} className="h-[200px] w-full mt-6">
                 <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="name" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)}/>
-                    <Tooltip
-                      cursor={{ fill: 'hsl(var(--muted))' }}
-                      content={<ChartTooltipContent formatter={formatCurrency} hideLabel />}
-                    />
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} />
-                </BarChart>
+                    <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }} accessibilityLayer>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                        {/* Use label from chartConfig for XAxis dataKey */}
+                        <XAxis
+                            dataKey="name"
+                            tickLine={false}
+                            axisLine={false}
+                            tickMargin={8}
+                            tickFormatter={(value) => chartConfig[value as keyof typeof chartConfig]?.label}
+                            stroke="hsl(var(--foreground))"
+                            fontSize={12}
+                         />
+                        <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)}/>
+                        <Tooltip
+                          cursor={{ fill: 'hsl(var(--muted))' }}
+                          content={<ChartTooltipContent formatter={formatCurrency} nameKey="name" hideLabel />} // Use nameKey from chartData
+                        />
+                        {/* Bar uses dataKey="value" which is defined in chartConfig */}
+                        <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                 </ResponsiveContainer>
-            </div>
+            </ChartContainer>
         )}
+         {filteredTransactions.length === 0 && (
+             <p className="text-muted-foreground text-center py-4">No transaction data for the selected period.</p>
+         )}
 
       </CardContent>
     </Card>
