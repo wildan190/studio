@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -14,7 +13,8 @@ export default function BudgetsPage() {
     handleAddBudget,
     handleDeleteBudget,
     isClient,
-    uuidLoaded
+    uuidLoaded,
+    authChecked // Get authChecked status
   } = useAppContext(); // Get state and handlers from context
 
     // Calculate total budget
@@ -26,8 +26,8 @@ export default function BudgetsPage() {
        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
      }
 
-    // Render loading state
-  if (!isClient || !uuidLoaded) {
+    // Updated Loading State: Wait for client, uuid, and auth check
+    if (!isClient || !uuidLoaded || !authChecked) {
     return (
       <div className="flex flex-1 flex-col p-4 md:p-6">
         <div className="space-y-6">
@@ -42,6 +42,7 @@ export default function BudgetsPage() {
     );
   }
 
+  // Render content if authenticated and ready
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <h1 className="text-2xl font-semibold tracking-tight">Manage Budgets</h1>

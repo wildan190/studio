@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -14,11 +13,12 @@ export default function TransactionsPage() {
     handleAddTransaction,
     handleDeleteTransaction,
     isClient,
-    uuidLoaded
+    uuidLoaded,
+    authChecked // Get authChecked status
   } = useAppContext(); // Get state and handlers from context
 
-  // Render loading state
-  if (!isClient || !uuidLoaded) {
+  // Updated Loading State: Wait for client, uuid, and auth check
+  if (!isClient || !uuidLoaded || !authChecked) {
     return (
       <div className="flex flex-1 flex-col p-4 md:p-6">
         <div className="space-y-6">
@@ -33,6 +33,7 @@ export default function TransactionsPage() {
     );
   }
 
+  // Render content if authenticated and ready
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <h1 className="text-2xl font-semibold tracking-tight">Manage Transactions</h1>

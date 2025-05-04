@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -9,10 +8,10 @@ import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // Keep Card for structure if needed
 
 export default function DashboardPage() {
-  const { transactions, budgets, isClient, uuidLoaded } = useAppContext(); // Get state from context
+  const { transactions, budgets, isClient, uuidLoaded, authChecked, currentUser } = useAppContext(); // Get state from context, including authChecked and currentUser
 
-  // Render loading state or skeleton if not client or essential libs not loaded yet
-  if (!isClient || !uuidLoaded) {
+  // Enhanced Loading State: Wait for client, uuid, and auth check
+  if (!isClient || !uuidLoaded || !authChecked) {
     return (
       <div className="flex flex-1 flex-col p-4 md:p-6">
         {/* Basic Skeleton or Loading State inside the main content area */}
@@ -29,7 +28,11 @@ export default function DashboardPage() {
     );
   }
 
-  // Render the main application UI once client and libs are ready
+  // If auth check is done but no user is logged in, this page shouldn't normally be reached due to redirects,
+  // but as a safeguard, you could show a message or null.
+  // However, the AppContext redirection logic should handle this.
+
+  // Render the main application UI once client, libs are ready, and auth is checked
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         {/* Dashboard Section */}

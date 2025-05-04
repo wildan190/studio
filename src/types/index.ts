@@ -16,3 +16,15 @@ export interface Budget {
   amount: number;
   period: BudgetPeriod;
 }
+
+// --- User Management Types ---
+export type Role = 'superadmin' | 'user'; // Define available roles
+
+export interface User {
+  id: string;
+  username: string;
+  // !! In a real application, NEVER store passwords like this.
+  // !! Passwords should be securely hashed on a server.
+  passwordHash: string; // For demo purposes, storing plaintext/simple hash
+  role: Role;
+}

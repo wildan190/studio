@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -7,10 +6,10 @@ import { ExpenseReport } from "@/components/ExpenseReport";
 import { Separator } from "@/components/ui/separator";
 
 export default function ReportsPage() {
-  const { transactions, budgets, isClient, uuidLoaded } = useAppContext(); // Get state from context
+  const { transactions, budgets, isClient, uuidLoaded, authChecked } = useAppContext(); // Get state from context, including authChecked
 
-    // Render loading state
-  if (!isClient || !uuidLoaded) {
+    // Updated Loading State: Wait for client, uuid, and auth check
+    if (!isClient || !uuidLoaded || !authChecked) {
     return (
       <div className="flex flex-1 flex-col p-4 md:p-6">
         <div className="space-y-6">
@@ -25,6 +24,7 @@ export default function ReportsPage() {
     );
   }
 
+  // Render content if authenticated and ready
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <h1 className="text-2xl font-semibold tracking-tight">Expense Reports</h1>

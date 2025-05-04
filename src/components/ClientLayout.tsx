@@ -1,8 +1,9 @@
-
 "use client";
 
 import * as React from 'react';
+import Link from 'next/link'; // Import Link
 import { usePathname } from 'next/navigation';
+import { useAppContext } from '@/context/AppContext'; // Import AppContext
 import {
   SidebarProvider,
   Sidebar,
@@ -14,11 +15,9 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
-  useSidebar, // Import useSidebar
 } from '@/components/ui/sidebar';
-import { Home, Briefcase, BarChart, Settings, List } from 'lucide-react'; // Added List icon
+import { Button } from '@/components/ui/button'; // Import Button
+import { Home, Briefcase, BarChart, List, LogOut, Users } from 'lucide-react'; // Added List, LogOut, Users icons
 
 export default function ClientLayout({
   children,
@@ -26,17 +25,36 @@ export default function ClientLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname(); // Get current path
-  // No need to call useSidebar here directly if only needed in the button
+  const { currentUser, logout, authChecked } = useAppContext(); // Get currentUser and logout from context
 
+  // Don't render layout content until authentication check is complete
+  // This prevents flashing the layout for unauthenticated users being redirected.
+   if (!authChecked) {
+     // Optional: You could return a full-page loader here
+     return null; // Or <FullPageLoader />;
+   }
+
+  // If no user is logged in, render only the children (likely the Login page)
+  if (!currentUser) {
+    return <>{children}</>;
+  }
+
+  // If user is logged in, render the full admin layout
   return (
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="p-4">
-          <div className="flex items-center gap-2">
-            {/* Placeholder for Logo or App Name */}
-            <Briefcase className="h-6 w-6 text-primary" />
-            <h2 className="text-xl font-semibold text-foreground">BizFlow</h2>
+          <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Briefcase className="h-6 w-6 text-primary" />
+                <h2 className="text-xl font-semibold text-foreground">BizFlow</h2>
+              </div>
+               {/* Mobile-only trigger - remains inside header for mobile */}
+               <div className="md:hidden">
+                    <SidebarTrigger />
+                </div>
           </div>
+           <p className="text-xs text-muted-foreground mt-1">Welcome, {currentUser.username}!</p>
         </SidebarHeader>
         <SidebarContent className="p-2">
           {/* Navigation Menu */}
@@ -48,51 +66,55 @@ export default function ClientLayout({
                 </SidebarMenuButton>
              </SidebarMenuItem>
              <SidebarMenuItem>
-                 <SidebarMenuButton href="/transactions" tooltip="Transactions" isActive={pathname === '/transactions'}>
+                 <SidebarMenuButton href="/transactions" tooltip="Transactions" isActive={pathname.startsWith('/transactions')}>
                    <List />
                    <span>Transactions</span>
                  </SidebarMenuButton>
              </SidebarMenuItem>
              <SidebarMenuItem>
-                 <SidebarMenuButton href="/budgets" tooltip="Budgets" isActive={pathname === '/budgets'}>
+                 <SidebarMenuButton href="/budgets" tooltip="Budgets" isActive={pathname.startsWith('/budgets')}>
                    <Briefcase />
                    <span>Budgets</span>
                  </SidebarMenuButton>
              </SidebarMenuItem>
              <SidebarMenuItem>
-                 <SidebarMenuButton href="/reports" tooltip="Reports" isActive={pathname === '/reports'}>
+                 <SidebarMenuButton href="/reports" tooltip="Reports" isActive={pathname.startsWith('/reports')}>
                    <BarChart />
                    <span>Reports</span>
                  </SidebarMenuButton>
              </SidebarMenuItem>
+              {/* User Management Link (Admin Only) */}
+             {currentUser.role === 'superadmin' && (
+                 <SidebarMenuItem>
+                     <SidebarMenuButton href="/users" tooltip="User Management" isActive={pathname.startsWith('/users')}>
+                       <Users />
+                       <span>Users</span>
+                     </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
           </SidebarMenu>
 
-          {/* Optional: Settings Group */}
-          {/*
-          <SidebarGroup className="mt-auto">
-            <SidebarGroupLabel>Settings</SidebarGroupLabel>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton href="#settings" tooltip="App Settings">
-                   <Settings />
-                   <span>Settings</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroup>
-          */}
         </SidebarContent>
-        <SidebarFooter className="p-4 text-xs text-muted-foreground">
-           &copy; {new Date().getFullYear()} BizFlow
+        <SidebarFooter className="p-4 flex flex-col space-y-2">
+            <Button variant="ghost" size="sm" onClick={logout} className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10">
+                 <LogOut className="mr-2 h-4 w-4" />
+                 <span>Logout</span>
+             </Button>
+           <p className="text-xs text-muted-foreground">&copy; {new Date().getFullYear()} BizFlow</p>
         </SidebarFooter>
       </Sidebar>
 
       {/* Main Content Area */}
       <SidebarInset>
-         {/* Add a header within the main content area */}
-         <header className="flex items-center justify-between border-b bg-card p-4 md:hidden"> {/* Show trigger only on mobile */}
-           <h1 className="text-lg font-semibold">BizFlow</h1>
-           <SidebarTrigger />
+         {/* Header within main content - Desktop trigger moved here */}
+         <header className="flex items-center justify-between border-b bg-card p-4">
+           {/* Show title only on desktop, as mobile has it in the sidebar header */}
+           <h1 className="text-lg font-semibold hidden md:block">BizFlow Dashboard</h1>
+           {/* Desktop-only trigger */}
+           <div className="hidden md:block">
+               <SidebarTrigger />
+           </div>
+            {/* Mobile has trigger in sidebar header */}
          </header>
          {/* Render page content */}
          {children}
