@@ -12,7 +12,7 @@ import { PlusCircle } from "lucide-react";
 // import { UserList } from "@/components/UserList";
 
 export default function UsersPage() {
-  const { currentUser, users, isClient, authChecked } = useAppContext();
+  const { currentUser, users, isClient, authChecked, addUser } = useAppContext(); // Added addUser
 
   // Loading state (consider a more robust loading indicator)
   if (!isClient || !authChecked) {
@@ -39,9 +39,21 @@ export default function UsersPage() {
     );
   }
 
+    // TODO: Implement actual handlers using the `addUser` from context
+    const handleAddUser = (data: any) => {
+        console.log("Add user:", data);
+        // Example: Replace 'data' with the actual structure from your future UserForm
+        // Assuming UserForm provides { username, password, role }
+        // const success = addUser({ username: data.username, password: data.password, role: data.role });
+        // if (success) { /* Handle success */ }
+    };
+    const handleDeleteUser = (id: string) => { console.log("Delete user:", id); /* TODO: Implement delete logic */ };
+    const handleEditUser = (user: any) => { console.log("Edit user:", user); /* TODO: Implement edit logic */ };
+
+
   // Main content render
   return (
-    <React.Fragment>
+    <> {/* Use fragment as ClientLayout provides the main structure */}
       <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
@@ -62,14 +74,16 @@ export default function UsersPage() {
               {/* Placeholder for User Form and List */}
               <p className="text-muted-foreground italic">User list and form components will be implemented here.</p>
               <p className="mt-2 text-muted-foreground">Current user count: {users.length}</p>
-              {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/*
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
                   <div className="md:col-span-1">
-                        <UserForm onSubmit={handleAddUser} /> {/* TODO: Implement UserForm */}
+                        {/* <UserForm onSubmit={handleAddUser} /> {/* TODO: Implement UserForm */}
                   </div>
                   <div className="md:col-span-2">
-                      <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} /> {/* TODO: Implement UserList and handlers */}
+                      {/* <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} /> {/* TODO: Implement UserList and handlers */}
                   </div>
-              </div> */}
+              </div>
+              */}
             </CardContent>
           </Card>
           <Card className="shadow-md rounded-lg border-accent">
@@ -84,6 +98,6 @@ export default function UsersPage() {
           </Card>
         </section>
       </div>
-    </React.Fragment>
+    </>
   );
 }
