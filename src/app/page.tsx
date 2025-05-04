@@ -4,11 +4,12 @@
 import * as React from "react";
 import { useAppContext } from '@/context/AppContext'; // Import useAppContext
 import { CashFlowSummary } from "@/components/CashFlowSummary";
+import { BudgetedVsNonBudgetedExpenses } from "@/components/BudgetedVsNonBudgetedExpenses"; // Import the new component
 import { Separator } from "@/components/ui/separator";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"; // Keep Card for structure if needed
 
 export default function DashboardPage() {
-  const { transactions, isClient, uuidLoaded } = useAppContext(); // Get state from context
+  const { transactions, budgets, isClient, uuidLoaded } = useAppContext(); // Get state from context
 
   // Render loading state or skeleton if not client or essential libs not loaded yet
   if (!isClient || !uuidLoaded) {
@@ -17,7 +18,8 @@ export default function DashboardPage() {
         {/* Basic Skeleton or Loading State inside the main content area */}
         <div className="space-y-6">
           <div className="h-10 w-48 bg-muted rounded-lg animate-pulse"></div>
-          <div className="h-60 bg-muted rounded-lg animate-pulse"></div>
+          <div className="h-60 bg-muted rounded-lg animate-pulse mb-6"></div>
+          <div className="h-80 bg-muted rounded-lg animate-pulse"></div> {/* Skeleton for the new section */}
         </div>
          <footer className="mt-12 text-center text-muted-foreground text-sm">
             <Separator className="my-4" />
@@ -33,7 +35,12 @@ export default function DashboardPage() {
         {/* Dashboard Section */}
         <section id="dashboard" className="space-y-6">
             <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+            {/* Existing Cash Flow Summary */}
             <CashFlowSummary transactions={transactions} />
+
+            {/* New Budgeted vs Non-Budgeted Expenses Section */}
+            <BudgetedVsNonBudgetedExpenses transactions={transactions} budgets={budgets} />
+
             {/* Add more dashboard-specific widgets here if needed in the future */}
             {/* Example:
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
