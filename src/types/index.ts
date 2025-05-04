@@ -7,3 +7,12 @@ export interface Transaction {
   amount: number;
   date: Date;
 }
+
+export type BudgetPeriod = 'monthly' | 'yearly'; // Add more periods as needed
+
+export interface Budget {
+  id: string;
+  category: string; // Matches expense transaction description/category
+  amount: number;
+  period: BudgetPeriod;
+}

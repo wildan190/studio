@@ -2,8 +2,8 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts"; // Removed Tooltip import from recharts
-import { subDays, subWeeks, subMonths, subYears, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, format } from "date-fns";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts";
+import { subDays, subWeeks, subMonths, subYears, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, format, isWithinInterval } from "date-fns";
 import {
   Card,
   CardContent,
@@ -18,7 +18,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-// Import ChartTooltip along with ChartTooltipContent
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { Transaction } from "@/types";
 
@@ -37,7 +36,7 @@ const chartConfig = {
         label: "Income",
         color: "hsl(var(--chart-1))", // Teal
     },
-    expenses: {
+    expense: { // Changed from 'expenses' to 'expense' to match dataKey
         label: "Expenses",
         color: "hsl(var(--destructive))", // Red
     },
@@ -49,11 +48,12 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
 
   const now = new Date();
   let startDate: Date;
-  let endDate: Date = endOfDay(now);
+  let endDate: Date; // end date is inclusive
 
   switch (period) {
     case "daily":
       startDate = startOfDay(now);
+      endDate = endOfDay(now);
       break;
     case "weekly":
       startDate = startOfWeek(now, { weekStartsOn: 1 }); // Monday start
@@ -73,7 +73,7 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
   }
 
   const filteredTransactions = transactions.filter(
-    (t) => t.date >= startDate && t.date <= endDate
+    (t) => isWithinInterval(t.date, { start: startDate, end: endDate })
   );
 
   const totalIncome = filteredTransactions
@@ -87,14 +87,13 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
   const netCashFlow = totalIncome - totalExpenses;
 
   // Prepare data for the chart
-  // Add key 'fill' for color and update 'name' to match chartConfig keys
+  // Use 'income' and 'expense' as keys to match chartConfig
   const chartData = [
     { name: "income", value: totalIncome, fill: "var(--color-income)" },
-    { name: "expenses", value: totalExpenses, fill: "var(--color-expenses)" },
+    { name: "expense", value: totalExpenses, fill: "var(--color-expense)" }, // Changed key to 'expense'
   ];
 
   const formatCurrency = (value: number) => {
-        // Use Intl.NumberFormat for potentially better performance and consistency
         return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
     }
 
@@ -121,7 +120,6 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-          {/* Use CSS variables for background colors for better theme consistency */}
           <div className="p-4 bg-[hsl(var(--chart-1)/0.1)] rounded-md">
             <p className="text-sm text-muted-foreground">Total Income</p>
             <p className="text-xl font-bold text-[hsl(var(--chart-1))]">{formatCurrency(totalIncome)}</p>
@@ -139,34 +137,33 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
         </div>
 
         {/* Chart */}
-        {filteredTransactions.length > 0 && (
+        {filteredTransactions.length > 0 ? ( // Check if there are *any* transactions in the period
             <ChartContainer config={chartConfig} className="h-[200px] w-full mt-6">
                 <ResponsiveContainer width="100%" height="100%">
+                    {/* Ensure chartData is passed correctly */}
                     <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 5 }} accessibilityLayer>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                        {/* Use label from chartConfig for XAxis dataKey */}
                         <XAxis
-                            dataKey="name"
+                            dataKey="name" // This should be 'income' or 'expense'
                             tickLine={false}
                             axisLine={false}
                             tickMargin={8}
-                            tickFormatter={(value) => chartConfig[value as keyof typeof chartConfig]?.label}
+                            // Format tick label using chartConfig
+                            tickFormatter={(value) => chartConfig[value as keyof typeof chartConfig]?.label ?? value}
                             stroke="hsl(var(--foreground))"
                             fontSize={12}
                          />
                         <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)}/>
-                        {/* Use ChartTooltip from shadcn/ui instead of recharts Tooltip */}
                         <ChartTooltip
                           cursor={{ fill: 'hsl(var(--muted))' }}
-                          content={<ChartTooltipContent formatter={formatCurrency} nameKey="name" hideLabel />} // Pass ChartTooltipContent here
+                          content={<ChartTooltipContent formatter={formatCurrency} nameKey="name" hideLabel />}
                         />
                         {/* Bar uses dataKey="value" which is defined in chartConfig */}
-                        <Bar dataKey="value" radius={[4, 4, 0, 0]} />
+                         <Bar dataKey="value" radius={[4, 4, 0, 0]} />
                     </BarChart>
                 </ResponsiveContainer>
             </ChartContainer>
-        )}
-         {filteredTransactions.length === 0 && (
+        ) : ( // Render message only if no transactions exist for the period
              <p className="text-muted-foreground text-center py-4">No transaction data for the selected period.</p>
          )}
 
