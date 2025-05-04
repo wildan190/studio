@@ -37,7 +37,6 @@ export default function UsersPage() {
          </div>
      );
    }
-   // The closing brace for the function was missing before this return statement
 
   return (
     // Use a div instead of main, as ClientLayout provides the main structure
@@ -83,5 +82,5 @@ export default function UsersPage() {
             </Card>
         </section>
     </div>
-  );
-} // Added missing closing brace for the function scope
+  ); // Removed semicolon from here
+} // Closing brace for the function scope
