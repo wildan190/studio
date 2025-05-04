@@ -5,7 +5,7 @@ import * as React from "react";
 import { useAppContext } from '@/context/AppContext'; // Import useAppContext
 import { BudgetForm } from "@/components/BudgetForm";
 import { BudgetList } from "@/components/BudgetList";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 export default function BudgetsPage() {
@@ -16,6 +16,15 @@ export default function BudgetsPage() {
     isClient,
     uuidLoaded
   } = useAppContext(); // Get state and handlers from context
+
+    // Calculate total budget
+    const totalBudget = React.useMemo(() => {
+      return budgets.reduce((sum, budget) => sum + budget.amount, 0);
+    }, [budgets]);
+
+     const formatCurrency = (value: number) => {
+       return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
+     }
 
     // Render loading state
   if (!isClient || !uuidLoaded) {
@@ -42,6 +51,7 @@ export default function BudgetsPage() {
                     <Card className="shadow-md rounded-lg">
                         <CardHeader>
                             <CardTitle className="text-lg">Add/Edit Budget</CardTitle>
+                             <CardDescription>Add a new budget or update an existing one by entering the same category and period.</CardDescription>
                         </CardHeader>
                         <CardContent>
                             <BudgetForm onSubmit={handleAddBudget} existingCategories={budgets.map(b => b.category)} />
@@ -51,7 +61,16 @@ export default function BudgetsPage() {
                  <div className="md:col-span-2">
                     <Card className="shadow-md rounded-lg">
                         <CardHeader>
-                            <CardTitle className="text-lg">Budget List</CardTitle>
+                            <div className="flex justify-between items-start">
+                                <div>
+                                    <CardTitle className="text-lg">Budget List</CardTitle>
+                                    <CardDescription>Current budgets set for different categories.</CardDescription>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm text-muted-foreground">Total Budget</p>
+                                    <p className="text-xl font-bold text-primary">{formatCurrency(totalBudget)}</p>
+                                </div>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             <BudgetList budgets={budgets} onDelete={handleDeleteBudget} />
