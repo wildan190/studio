@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
@@ -50,7 +51,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [uuidLoaded, setUuidLoaded] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false); // Track initial auth check
+  const [authChecked, setAuthChecked] = useState(false); // Track initial auth check completed
   const router = useRouter();
   const pathname = usePathname();
 
@@ -69,68 +70,106 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
   }, []);
 
-  // Seed Admin User & Check Session on Mount
-  useEffect(() => {
-    if (!isClient || !generateUuid) return; // Wait for client and uuid
+  // Effect 1: Seed Admin User & Data Migration & Initial Auth Check
+   useEffect(() => {
+     if (!isClient || !generateUuid || authChecked) return; // Wait for client and uuid, run only once
 
-    // Seed initial admin user if none exist
-    if (users.length === 0) {
-       console.log("Seeding initial admin user...");
-       const adminUser: User = {
-         id: generateUuid(),
-         username: ADMIN_USERNAME,
-         // !! Storing plaintext password directly. EXTREMELY INSECURE.
-         // !! In a real app, hash the password securely server-side before storage.
-         passwordHash: ADMIN_PASSWORD,
-         role: "superadmin",
-         permissions: MANAGEABLE_PATHS.map(p => p.path), // Superadmin gets all permissions
-       };
-       setUsers([adminUser]);
-       console.log("Admin user seeded. Please login.");
-    } else {
-        // Ensure existing users have the permissions field (migration for older data)
-        let needsUpdate = false;
-        const updatedUsers = users.map(u => {
-            if (!u.permissions) {
-                needsUpdate = true;
-                return {
-                    ...u,
-                    // Assign default permissions based on role if missing
-                    permissions: u.role === 'superadmin'
-                        ? MANAGEABLE_PATHS.map(p => p.path)
-                        : DEFAULT_ALLOWED_PATHS,
-                };
+     let usersModified = false; // Flag to track if users array was changed
+
+     // Seed initial admin user if none exist
+     if (users.length === 0) {
+        console.log("Seeding initial admin user...");
+        const adminUser: User = {
+          id: generateUuid(),
+          username: ADMIN_USERNAME,
+          passwordHash: ADMIN_PASSWORD, // !! INSECURE !!
+          role: "superadmin",
+          permissions: MANAGEABLE_PATHS.map(p => p.path),
+        };
+        setUsers([adminUser]);
+        usersModified = true; // Mark as modified
+        console.log("Admin user seeded.");
+     } else {
+         // Ensure existing users have the permissions field (migration for older data)
+         let needsMigrationUpdate = false;
+         const migratedUsers = users.map(u => {
+             if (!u.permissions) {
+                 needsMigrationUpdate = true;
+                 return {
+                     ...u,
+                     permissions: u.role === 'superadmin'
+                         ? MANAGEABLE_PATHS.map(p => p.path)
+                         : DEFAULT_ALLOWED_PATHS,
+                 };
+             }
+             // Ensure superadmins always have full permissions after migration/load
+             if (u.role === 'superadmin' && (!u.permissions || u.permissions.length !== MANAGEABLE_PATHS.length)) {
+                 needsMigrationUpdate = true;
+                 return { ...u, permissions: MANAGEABLE_PATHS.map(p => p.path) };
+             }
+             return u;
+         });
+         if (needsMigrationUpdate) {
+             setUsers(migratedUsers);
+             usersModified = true; // Mark as modified
+             console.log("Migrated/verified existing users permissions field.");
+         }
+     }
+
+     // Set authChecked to true *after* any potential modifications
+     // This allows the next effect to run with the correct user data
+     setAuthChecked(true);
+     console.log("Auth check complete.");
+
+
+   }, [isClient, generateUuid, users, setUsers, authChecked]); // Keep dependencies, but add authChecked guard
+
+
+    // Effect 2: Check Session storage and set current user
+    useEffect(() => {
+        // Wait for client-side, uuid load, and initial auth check/seeding
+        if (!isClient || !uuidLoaded || !authChecked) {
+            return;
+        }
+
+        const loggedInUserId = sessionStorage.getItem("bizflow_currentUser");
+
+        if (loggedInUserId) {
+            const userFromStorage = users.find(u => u.id === loggedInUserId);
+            if (userFromStorage) {
+                // Only update state if the user is actually different or not set yet
+                if (!currentUser || currentUser.id !== userFromStorage.id) {
+                    // Ensure permissions are correctly set when loading from session
+                    const userWithPermissions = {
+                        ...userFromStorage,
+                        permissions: userFromStorage.permissions || (userFromStorage.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS),
+                    };
+                    console.log("Setting current user from session storage:", userWithPermissions.username);
+                    setCurrentUser(userWithPermissions);
+                }
+            } else {
+                // User ID in session storage, but user doesn't exist in local storage anymore
+                 if (currentUser) { // Only clear state if it's currently set
+                     console.log("User ID in session storage not found in current user list. Logging out.");
+                     setCurrentUser(null); // Clear current user state
+                 }
+                sessionStorage.removeItem("bizflow_currentUser"); // Clear invalid session storage
             }
-            return u;
-        });
-        if (needsUpdate) {
-            setUsers(updatedUsers);
-            console.log("Migrated existing users to include permissions field.");
-        }
-    }
-
-
-    // Check for existing session (simple check, no real session management)
-    const loggedInUserId = sessionStorage.getItem("bizflow_currentUser");
-    if (loggedInUserId) {
-        const userFromStorage = users.find(u => u.id === loggedInUserId);
-        if (userFromStorage) {
-             // Ensure currentUser state also includes permissions
-             const userWithPermissions = {
-                 ...userFromStorage,
-                 permissions: userFromStorage.permissions || (userFromStorage.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS),
-             };
-             setCurrentUser(userWithPermissions);
         } else {
-            // Clear invalid session data
-            sessionStorage.removeItem("bizflow_currentUser");
+            // No user ID in session storage, ensure currentUser state is null
+            if (currentUser) {
+                console.log("No user ID in session storage. Clearing current user state.");
+                setCurrentUser(null);
+            }
         }
-    }
-    setAuthChecked(true); // Mark initial auth check as complete
 
-  }, [isClient, users, setUsers, generateUuid]); // Depend on isClient, users, setUsers, generateUuid
+    // Depend on users array changes, auth status, and isClient status.
+    // currentUser is included to correctly handle external state changes (like programmatic logout).
+    }, [isClient, uuidLoaded, authChecked, users, currentUser]);
 
-    // Redirect Logic - Runs after auth state is initially checked
+
+
+    // Effect 3: Redirect Logic - Runs after auth state is potentially updated by Effect 2
     useEffect(() => {
         if (!isClient || !authChecked) return; // Wait for client-side and initial auth check
 
@@ -139,18 +178,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         if (!currentUser && !pathIsPublic) {
             // If not logged in and trying to access a private page, redirect to login
+            console.log("Redirecting to login: Not logged in.");
             router.push('/login');
         } else if (currentUser && pathIsPublic) {
             // If logged in and trying to access a public page (like login), redirect to dashboard
+             console.log("Redirecting to dashboard: Logged in, accessing public page.");
             router.push('/');
         }
-        // Role-based redirect for /users page
-        if (currentUser?.role !== 'superadmin' && pathname === '/users') {
-             toast({ title: "Access Denied", description: "You do not have permission to access the User Management page.", variant: "destructive"});
-             router.push('/'); // Redirect non-admins away from user management
-        }
-
-        // NOTE: Permission check for other pages is handled in ClientLayout
+        // Role-based redirect for /users page (handled outside this effect for immediate feedback)
+        // Permission check for other pages is handled in ClientLayout
 
     }, [isClient, authChecked, currentUser, pathname, router]);
 
@@ -224,21 +260,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             return false;
         }
 
-        const userIndex = users.findIndex(u => u.id === id);
-        if (userIndex === -1) {
-            toast({ title: "Error", description: "User not found.", variant: "destructive"});
-            return false;
-        }
-
-        // Check for username conflict if username is being changed
-        if (data.username && data.username !== users[userIndex].username && users.some(u => u.username.toLowerCase() === data.username?.toLowerCase() && u.id !== id)) {
-            toast({ title: "Error", description: "Username already exists.", variant: "destructive"});
-            return false;
-        }
+        let userToUpdate: User | undefined;
+        let updatedUsersList: User[] = [];
 
         setUsers(prevUsers => {
-            const updatedUsers = [...prevUsers];
-            const userToUpdate = updatedUsers[userIndex];
+            const userIndex = prevUsers.findIndex(u => u.id === id);
+            if (userIndex === -1) {
+                toast({ title: "Error", description: "User not found.", variant: "destructive"});
+                return prevUsers; // Return previous state if user not found
+            }
+
+            userToUpdate = prevUsers[userIndex];
+
+            // Check for username conflict if username is being changed
+            if (data.username && data.username !== userToUpdate.username && prevUsers.some(u => u.username.toLowerCase() === data.username?.toLowerCase() && u.id !== id)) {
+                toast({ title: "Error", description: "Username already exists.", variant: "destructive"});
+                return prevUsers; // Return previous state if username conflict
+            }
+
 
             // Determine new permissions if role changes
             let newPermissions = userToUpdate.permissions;
@@ -248,8 +287,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                                     : DEFAULT_ALLOWED_PATHS; // Reset permissions on role change
             }
 
-
-            updatedUsers[userIndex] = {
+            updatedUsersList = [...prevUsers];
+            updatedUsersList[userIndex] = {
                 ...userToUpdate,
                 username: data.username ?? userToUpdate.username,
                 role: data.role ?? userToUpdate.role,
@@ -258,17 +297,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 permissions: newPermissions, // Update permissions if role changed
             };
 
-             // If the updated user is the current user, update currentUser state
-             if (currentUser?.id === id) {
-                setCurrentUser(updatedUsers[userIndex]);
-             }
-
-            return updatedUsers;
+             return updatedUsersList;
         });
 
-        toast({ title: "User Updated", description: `User ${data.username ?? users[userIndex].username} updated successfully.` });
+        // Update currentUser state outside of setUsers if the current user was the one updated
+        if (userToUpdate && currentUser?.id === id) {
+            const updatedCurrentUser = updatedUsersList.find(u => u.id === id);
+            if(updatedCurrentUser) {
+                setCurrentUser(updatedCurrentUser);
+            }
+        }
+
+
+        toast({ title: "User Updated", description: `User ${data.username ?? userToUpdate?.username} updated successfully.` });
         return true;
-    }, [currentUser, users, setUsers]);
+    }, [currentUser, setUsers]); // Removed 'users' dependency here as we use the prevUsers in setUsers
 
      // Delete User (Admin Only)
      const deleteUser = useCallback((id: string): boolean => {
@@ -312,39 +355,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
              return false;
          }
 
-         const userIndex = users.findIndex(u => u.id === userId);
-         if (userIndex === -1) {
-             toast({ title: "Error", description: "User not found.", variant: "destructive" });
-             return false;
-         }
-
-         // Ensure dashboard is always included for non-admins
-         let finalPermissions = [...permissions];
-         if (users[userIndex].role !== 'superadmin' && !finalPermissions.includes('/')) {
-             finalPermissions.push('/');
-         }
-         // Superadmins always have all permissions, don't allow modification via this function directly
-         if (users[userIndex].role === 'superadmin') {
-             finalPermissions = MANAGEABLE_PATHS.map(p => p.path);
-         }
+          let updatedUser: User | undefined;
+          let finalUsersList: User[] = [];
 
 
          setUsers(prevUsers => {
-             const updatedUsers = [...prevUsers];
-             updatedUsers[userIndex] = {
-                 ...updatedUsers[userIndex],
+            const userIndex = prevUsers.findIndex(u => u.id === userId);
+            if (userIndex === -1) {
+                toast({ title: "Error", description: "User not found.", variant: "destructive" });
+                return prevUsers;
+            }
+
+             const userToUpdate = prevUsers[userIndex];
+
+             // Ensure dashboard is always included for non-admins
+             let finalPermissions = [...permissions];
+             if (userToUpdate.role !== 'superadmin' && !finalPermissions.includes('/')) {
+                 finalPermissions.push('/');
+             }
+             // Superadmins always have all permissions, don't allow modification via this function directly
+             if (userToUpdate.role === 'superadmin') {
+                 finalPermissions = MANAGEABLE_PATHS.map(p => p.path);
+             }
+
+             finalUsersList = [...prevUsers];
+              updatedUser = {
+                 ...userToUpdate,
                  permissions: finalPermissions,
              };
-             // If the updated user is the current user, update currentUser state
-             if (currentUser?.id === userId) {
-                  setCurrentUser(updatedUsers[userIndex]);
-             }
-             return updatedUsers;
+             finalUsersList[userIndex] = updatedUser;
+
+
+             return finalUsersList;
          });
 
-         toast({ title: "Permissions Updated", description: `Permissions for ${users[userIndex].username} updated successfully.` });
+          // If the updated user is the current user, update currentUser state
+          if (updatedUser && currentUser?.id === userId) {
+             setCurrentUser(updatedUser);
+          }
+
+
+         toast({ title: "Permissions Updated", description: `Permissions for ${updatedUser?.username} updated successfully.` });
          return true;
-     }, [currentUser, users, setUsers]);
+     }, [currentUser, setUsers]); // Removed 'users' dependency
 
 
   // --- Transaction and Budget Functions ---
@@ -387,33 +440,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
        return;
      }
      const dataCategoryLower = data.category.toLowerCase();
-     const existingBudget = budgets.find(b =>
-       b.category.toLowerCase() === dataCategoryLower && b.period === data.period
-     );
 
-     if (existingBudget) {
-       const updatedBudgets = budgets.map(b =>
-         b.id === existingBudget.id ? { ...b, amount: data.amount, category: data.category } : b
-       );
-       setBudgets(updatedBudgets);
-        toast({
-           title: "Budget Updated",
-           description: `Budget for ${data.category} (${data.period}) updated to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
-         });
-     } else {
-       const newBudget: Budget = {
-         ...data,
-         id: generateUuid(),
-       };
-       setBudgets(prevBudgets =>
-         [...prevBudgets, newBudget].sort((a, b) => a.category.localeCompare(b.category))
-        );
-        toast({
-            title: "Budget Added",
-            description: `Budget for ${data.category} (${data.period}) set to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
-          });
-     }
-   }, [budgets, setBudgets, generateUuid]); // Added generateUuid dependency
+
+     setBudgets(prevBudgets => {
+        const existingBudgetIndex = prevBudgets.findIndex(b =>
+            b.category.toLowerCase() === dataCategoryLower && b.period === data.period
+          );
+
+        if (existingBudgetIndex !== -1) {
+            const updatedBudgets = [...prevBudgets];
+            updatedBudgets[existingBudgetIndex] = {
+                 ...prevBudgets[existingBudgetIndex],
+                 amount: data.amount,
+                 category: data.category // Update category casing too
+            };
+            toast({
+                title: "Budget Updated",
+                description: `Budget for ${data.category} (${data.period}) updated to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
+              });
+            return updatedBudgets.sort((a, b) => a.category.localeCompare(b.category));
+        } else {
+            const newBudget: Budget = {
+              ...data,
+              id: generateUuid!(),
+            };
+             toast({
+                 title: "Budget Added",
+                 description: `Budget for ${data.category} (${data.period}) set to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
+               });
+            return [...prevBudgets, newBudget].sort((a, b) => a.category.localeCompare(b.category));
+        }
+     });
+   }, [setBudgets, generateUuid]); // Removed budgets dependency
+
 
   const handleDeleteBudget = useCallback((id: string) => {
     const budgetToDelete = budgets.find(b => b.id === id);
@@ -455,7 +514,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   return (
     <AppContext.Provider value={value}>
-      {showContent ? children : null /* Optionally show a loading spinner here */}
+      {/* Render based on client readiness AND auth check */}
+       {isClient && showContent ? children : null /* Optionally show a loading spinner here */}
     </AppContext.Provider>
   );
 };
@@ -467,3 +527,6 @@ export const useAppContext = (): AppContextProps => {
   }
   return context;
 };
+
+
+    
