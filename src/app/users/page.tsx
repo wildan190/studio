@@ -12,10 +12,26 @@ import { UserForm } from "@/components/UserForm";
 import { UserList } from "@/components/UserList";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { User } from "@/types"; // Import User type
+import { ITEMS_PER_PAGE } from "@/lib/constants"; // Import items per page constant
 
 export default function UsersPage() {
   const { currentUser, users, isClient, authChecked, addUser, deleteUser, updateUser, updateUserPermissions } = useAppContext(); // Add updateUserPermissions
   const [editingUser, setEditingUser] = useState<User | null>(null); // State for user being edited
+  const [currentPage, setCurrentPage] = React.useState(1);
+
+    // Calculate total pages
+  const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
+
+    // Get users for the current page
+  const paginatedUsers = users.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+    const handlePageChange = (page: number) => {
+        setCurrentPage(page);
+    };
+
 
   if (!isClient || !authChecked) {
     return (
@@ -138,20 +154,24 @@ export default function UsersPage() {
 
              {/* Column 2: User List */}
              <div className="md:col-span-1">
-                <Card className="shadow-md rounded-lg">
+                <Card className="shadow-md rounded-lg flex flex-col"> {/* Added flex flex-col */}
                     <CardHeader>
                     <CardTitle>Current Users</CardTitle>
                     <CardDescription>List of all registered users and their roles. Edit, delete, or manage permissions.</CardDescription>
                     </CardHeader>
-                    <CardContent>
+                     {/* Removed CardContent wrapping UserList */}
                         <UserList
-                            users={users}
+                            users={paginatedUsers} // Use paginated users
                             onDelete={handleDeleteUser}
                             onEdit={handleEditUser}
                             currentUser={currentUser}
                             onUpdatePermissions={handleUpdatePermissions} // Pass handler
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                            itemsPerPage={ITEMS_PER_PAGE}
+                            totalItems={users.length} // Use total users length
                          />
-                    </CardContent>
                  </Card>
              </div>
           </div>

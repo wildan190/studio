@@ -6,6 +6,8 @@ import { BudgetForm } from "@/components/BudgetForm";
 import { BudgetList } from "@/components/BudgetList";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ITEMS_PER_PAGE } from "@/lib/constants"; // Import items per page constant
+
 
 export default function BudgetsPage() {
   const {
@@ -17,7 +19,32 @@ export default function BudgetsPage() {
     authChecked // Get authChecked status
   } = useAppContext(); // Get state and handlers from context
 
-    // Calculate total budget
+    const [currentPage, setCurrentPage] = React.useState(1);
+
+    // Sort budgets before pagination
+    const sortedBudgets = React.useMemo(() => {
+        return [...budgets].sort((a, b) => {
+            const categoryComparison = a.category.localeCompare(b.category);
+            if (categoryComparison !== 0) return categoryComparison;
+            return a.period.localeCompare(b.period);
+        });
+    }, [budgets]);
+
+
+    // Calculate total pages
+    const totalPages = Math.ceil(sortedBudgets.length / ITEMS_PER_PAGE);
+
+    // Get budgets for the current page
+    const paginatedBudgets = sortedBudgets.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE
+    );
+
+    const handlePageChange = (page: number) => {
+        setCurrentPage(page);
+    };
+
+    // Calculate total budget from *all* budgets, not just paginated ones
     const totalBudget = React.useMemo(() => {
       return budgets.reduce((sum, budget) => sum + budget.amount, 0);
     }, [budgets]);
@@ -60,7 +87,7 @@ export default function BudgetsPage() {
                     </Card>
                 </div>
                  <div className="md:col-span-2">
-                    <Card className="shadow-md rounded-lg">
+                    <Card className="shadow-md rounded-lg flex flex-col"> {/* Added flex flex-col */}
                         <CardHeader>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -73,9 +100,16 @@ export default function BudgetsPage() {
                                 </div>
                             </div>
                         </CardHeader>
-                        <CardContent>
-                            <BudgetList budgets={budgets} onDelete={handleDeleteBudget} />
-                        </CardContent>
+                        {/* Removed CardContent wrapping BudgetList */}
+                         <BudgetList
+                            budgets={paginatedBudgets}
+                            onDelete={handleDeleteBudget}
+                            currentPage={currentPage}
+                            totalPages={totalPages}
+                            onPageChange={handlePageChange}
+                            itemsPerPage={ITEMS_PER_PAGE}
+                            totalItems={budgets.length} // Use total budgets length
+                            />
                     </Card>
                  </div>
             </div>
@@ -83,3 +117,4 @@ export default function BudgetsPage() {
     </main>
   );
 }
+

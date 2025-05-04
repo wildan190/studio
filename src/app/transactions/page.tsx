@@ -6,6 +6,7 @@ import { TransactionForm } from "@/components/TransactionForm";
 import { TransactionList } from "@/components/TransactionList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { ITEMS_PER_PAGE } from "@/lib/constants"; // Import items per page constant
 
 export default function TransactionsPage() {
   const {
@@ -16,6 +17,22 @@ export default function TransactionsPage() {
     uuidLoaded,
     authChecked // Get authChecked status
   } = useAppContext(); // Get state and handlers from context
+
+  const [currentPage, setCurrentPage] = React.useState(1);
+
+  // Calculate total pages
+  const totalPages = Math.ceil(transactions.length / ITEMS_PER_PAGE);
+
+  // Get transactions for the current page
+  const paginatedTransactions = transactions.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
 
   // Updated Loading State: Wait for client, uuid, and auth check
   if (!isClient || !uuidLoaded || !authChecked) {
@@ -50,13 +67,20 @@ export default function TransactionsPage() {
                     </Card>
                 </div>
                 <div className="md:col-span-2">
-                    <Card className="shadow-md rounded-lg">
+                    <Card className="shadow-md rounded-lg flex flex-col"> {/* Added flex flex-col */}
                     <CardHeader>
                         <CardTitle className="text-lg">Transaction History</CardTitle>
                     </CardHeader>
-                    <CardContent>
-                        <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />
-                    </CardContent>
+                    {/* Removed CardContent wrapping TransactionList to allow PaginationControls to be directly below the list */}
+                     <TransactionList
+                        transactions={paginatedTransactions}
+                        onDelete={handleDeleteTransaction}
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        onPageChange={handlePageChange}
+                        itemsPerPage={ITEMS_PER_PAGE}
+                        totalItems={transactions.length}
+                        />
                     </Card>
                 </div>
             </div>

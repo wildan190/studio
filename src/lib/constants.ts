@@ -13,3 +13,8 @@ export const MANAGEABLE_PATHS = [
  * Paths accessible to all authenticated users by default.
  */
 export const DEFAULT_ALLOWED_PATHS = ['/'];
+
+/**
+ * Default number of items to display per page for paginated lists.
+ */
+export const ITEMS_PER_PAGE = 10;
