@@ -82,12 +82,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
        toast({ title: "Error", description: "Could not save budget. Please try again.", variant: "destructive"});
        return;
      }
-     // Check if budget for this category and period already exists
-     const existingBudget = budgets.find(b => b.category.toLowerCase() === data.category.toLowerCase() && b.period === data.period);
+     // Case-insensitive check for existing budget
+     const dataCategoryLower = data.category.toLowerCase();
+     const existingBudget = budgets.find(b =>
+       b.category.toLowerCase() === dataCategoryLower && b.period === data.period
+     );
+
      if (existingBudget) {
        // Update existing budget
        const updatedBudgets = budgets.map(b =>
-         b.id === existingBudget.id ? { ...b, amount: data.amount } : b
+         b.id === existingBudget.id ? { ...b, amount: data.amount, category: data.category } : b // Update amount and potentially casing of category
        );
        setBudgets(updatedBudgets);
         toast({
@@ -143,3 +147,4 @@ export const useAppContext = (): AppContextProps => {
   }
   return context;
 };
+

@@ -38,17 +38,18 @@ export function BudgetedVsNonBudgetedExpenses({ transactions, budgets }: Budgete
     (t) => t.type === "expense" && isWithinInterval(t.date, { start: startDate, end: endDate })
   );
 
-  // 2. Get budget categories for the 'monthly' period
-  const monthlyBudgetCategories = new Set(
+  // 2. Get budget categories for the 'monthly' period (store lowercase)
+  const monthlyBudgetCategoriesLower = new Set(
     budgets.filter(b => b.period === "monthly").map(b => b.category.toLowerCase())
   );
 
-  // 3. Categorize expenses
+  // 3. Categorize expenses (compare lowercase)
   const budgetedExpenses: Transaction[] = [];
   const nonBudgetedExpenses: Transaction[] = [];
 
   monthlyExpenses.forEach(expense => {
-    if (monthlyBudgetCategories.has(expense.description.toLowerCase())) {
+    // Convert transaction description to lowercase for comparison
+    if (monthlyBudgetCategoriesLower.has(expense.description.toLowerCase())) {
       budgetedExpenses.push(expense);
     } else {
       nonBudgetedExpenses.push(expense);
@@ -96,7 +97,7 @@ export function BudgetedVsNonBudgetedExpenses({ transactions, budgets }: Budgete
             </Table>
           </ScrollArea>
         ) : (
-          <p className="text-muted-foreground text-center py-4">No {title.toLowerCase()} for this month.</p>
+          <p className="text-muted-foreground text-center py-4">No {title.toLowerCase().split(" ")[0]} expenses for this month.</p> // Simplified message
         )}
       </CardContent>
     </Card>
@@ -107,7 +108,7 @@ export function BudgetedVsNonBudgetedExpenses({ transactions, budgets }: Budgete
         <CardHeader>
             <CardTitle>Monthly Expense Breakdown</CardTitle>
             <CardDescription>
-                Expenses categorized based on whether they match a set monthly budget ({format(now, 'MMMM yyyy')}).
+                Expenses categorized based on whether they match a set monthly budget ({format(now, 'MMMM yyyy')}). Comparison is case-insensitive.
             </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

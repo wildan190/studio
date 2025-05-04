@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Legend } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Legend, Cell } from "recharts"; // Added Cell
 import { startOfMonth, endOfMonth, startOfYear, endOfYear, format, isWithinInterval } from "date-fns";
 import {
   Card,
@@ -35,19 +35,14 @@ type ReportPeriod = "monthly" | "yearly";
 const generateChartConfig = (reportData: ReportData[]): ChartConfig => {
     const config: ChartConfig = {
         budget: { label: "Budget", color: "hsl(var(--secondary-foreground)/0.5)" },
-        actual: { label: "Actual", color: "hsl(var(--primary))" },
+        actual: { label: "Actual", color: "hsl(var(--primary))" }, // Default color for actual
+        actual_over: { label: "Actual (Over)", color: "hsl(var(--destructive))" }, // Color for over-budget actual
     };
-    // Add specific categories if needed, though the current setup is generic
-    // reportData.forEach(item => {
-    //     if (!config[item.category]) {
-    //         config[item.category] = { label: item.category }; // Basic config
-    //     }
-    // });
     return config;
 };
 
 interface ReportData {
-    category: string;
+    category: string; // Store original casing for display
     budget: number;
     actual: number;
     percentage: number;
@@ -81,50 +76,67 @@ export function ExpenseReport({ transactions, budgets }: ExpenseReportProps) {
     (t) => t.type === "expense" && isWithinInterval(t.date, { start: startDate, end: endDate })
   );
 
-  // Filter budgets for the selected period
-  const relevantBudgets = budgets.filter(b => b.period === period);
+  // Filter budgets for the selected period and create a map for quick lookup (lowercase keys)
+  const relevantBudgetsLowerMap = budgets
+    .filter(b => b.period === period)
+    .reduce((acc, budget) => {
+      acc[budget.category.toLowerCase()] = budget; // Use lowercase category as key
+      return acc;
+    }, {} as Record<string, Budget>);
 
-  // Calculate actual spending per category
-  const actualSpending = filteredExpenses.reduce((acc, t) => {
-    const category = t.description; // Assuming description is the category
-    acc[category] = (acc[category] || 0) + t.amount;
+
+  // Calculate actual spending per category (using lowercase category keys)
+  const actualSpendingLowerMap = filteredExpenses.reduce((acc, t) => {
+    const categoryLower = t.description.toLowerCase(); // Use lowercase category
+    acc[categoryLower] = (acc[categoryLower] || 0) + t.amount;
     return acc;
   }, {} as Record<string, number>);
 
   // Combine budget and actual spending data
-  const reportData: ReportData[] = relevantBudgets.map(budget => {
-    const actual = actualSpending[budget.category] || 0;
-    const percentage = budget.amount > 0 ? Math.round((actual / budget.amount) * 100) : 0;
-    return {
-      category: budget.category,
-      budget: budget.amount,
-      actual: actual,
-      percentage: percentage,
-      isOverBudget: actual > budget.amount,
-    };
-  }).sort((a, b) => b.actual - a.actual); // Sort by actual spending descending
+   const reportDataMap: Record<string, ReportData> = {};
 
-  // Also include expenses that don't have a budget
-   Object.keys(actualSpending).forEach(category => {
-     if (!reportData.some(item => item.category === category)) {
-       reportData.push({
-         category: category,
-         budget: 0, // No budget set
-         actual: actualSpending[category],
-         percentage: 0, // Or treat as Infinity/NaN if preferred
-         isOverBudget: true, // Always over budget if budget is 0 and spending > 0
-       });
+   // Process budgets
+   Object.values(relevantBudgetsLowerMap).forEach(budget => {
+     const categoryLower = budget.category.toLowerCase();
+     const actual = actualSpendingLowerMap[categoryLower] || 0;
+     const percentage = budget.amount > 0 ? Math.round((actual / budget.amount) * 100) : 0;
+     reportDataMap[categoryLower] = {
+       category: budget.category, // Keep original casing for display
+       budget: budget.amount,
+       actual: actual,
+       percentage: percentage,
+       isOverBudget: actual > budget.amount,
+     };
+   });
+
+   // Process expenses without a matching budget
+   Object.entries(actualSpendingLowerMap).forEach(([categoryLower, actual]) => {
+     if (!reportDataMap[categoryLower]) {
+        // Find the original casing from the first transaction with this category (case-insensitive)
+        const originalCategory = filteredExpenses.find(t => t.description.toLowerCase() === categoryLower)?.description || categoryLower;
+        reportDataMap[categoryLower] = {
+          category: originalCategory,
+          budget: 0,
+          actual: actual,
+          percentage: 0,
+          isOverBudget: actual > 0, // Over budget if any spending and no budget
+        };
      }
    });
+
+   // Convert map to array and sort
+   const reportData: ReportData[] = Object.values(reportDataMap).sort((a, b) => b.actual - a.actual);
+
 
   const chartConfig = generateChartConfig(reportData);
   // Prepare data for the chart (Top N categories or all?) Let's show top 7 for visual clarity
   const chartData = reportData.slice(0, 7).map(item => ({
-      name: item.category, // Use category as the name/label on X-axis
+      name: item.category, // Use original category casing for X-axis labels
       budget: item.budget,
       actual: item.actual,
-      fillActual: item.isOverBudget ? "hsl(var(--destructive))" : "hsl(var(--primary))", // Conditional fill
-      fillBudget: "hsl(var(--secondary-foreground)/0.3)", // Lighter fill for budget
+      // Use a specific fill color based on budget status
+      fillActual: item.isOverBudget ? "hsl(var(--destructive))" : "hsl(var(--primary))",
+      fillBudget: "hsl(var(--secondary-foreground)/0.3)",
   }));
 
 
@@ -148,7 +160,7 @@ export function ExpenseReport({ transactions, budgets }: ExpenseReportProps) {
             </Select>
         </div>
         <CardDescription>
-          Budget vs Actual Spending ({period === 'monthly' ? format(now, 'MMMM yyyy') : format(now, 'yyyy')})
+          Budget vs Actual Spending ({period === 'monthly' ? format(now, 'MMMM yyyy') : format(now, 'yyyy')}). Comparison is case-insensitive.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -157,35 +169,35 @@ export function ExpenseReport({ transactions, budgets }: ExpenseReportProps) {
             {/* Chart */}
             <ChartContainer config={chartConfig} className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 60 }} accessibilityLayer layout="vertical">
-                   <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <YAxis
-                        dataKey="name"
-                        type="category"
-                        tickLine={false}
-                        axisLine={false}
-                        tickMargin={8}
-                        width={100} // Adjust width as needed for longer labels
-                        interval={0} // Show all labels
-                        stroke="hsl(var(--foreground))"
-                        fontSize={12}
-                        tick={{ dy: 5 }} // Adjust vertical positioning
-                    />
-                    <XAxis type="number" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)} />
-                    <ChartTooltip
-                      cursor={{ fill: 'hsl(var(--muted))' }}
-                      content={<ChartTooltipContent formatter={formatCurrency} />} // Use default formatting or customize
-                    />
-                  <Legend />
-                  <Bar dataKey="budget" fill="var(--color-budget)" name="Budget" radius={4} barSize={15} />
-                  {/* Use dynamic fill based on over/under budget */}
-                  <Bar dataKey="actual" name="Actual" radius={4} barSize={15}>
-                    {chartData.map((entry, index) => (
-                        <rect key={`cell-${index}`} fill={entry.fillActual} width={15} /> // Use calculated fill
-                      ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                 <BarChart data={chartData} margin={{ top: 5, right: 20, left: 20, bottom: 60 }} accessibilityLayer layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                     <YAxis
+                         dataKey="name" // Display original category casing
+                         type="category"
+                         tickLine={false}
+                         axisLine={false}
+                         tickMargin={8}
+                         width={100} // Adjust width as needed for longer labels
+                         interval={0} // Show all labels
+                         stroke="hsl(var(--foreground))"
+                         fontSize={12}
+                         tick={{ dy: 5 }} // Adjust vertical positioning
+                     />
+                     <XAxis type="number" stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)} />
+                     <ChartTooltip
+                       cursor={{ fill: 'hsl(var(--muted))' }}
+                       content={<ChartTooltipContent formatter={formatCurrency} />} // Use default formatting or customize
+                     />
+                   <Legend />
+                   <Bar dataKey="budget" fill="var(--color-budget)" name="Budget" radius={4} barSize={15} />
+                   {/* Use Cell to apply dynamic fill based on over/under budget */}
+                   <Bar dataKey="actual" name="Actual" radius={4} barSize={15}>
+                     {chartData.map((entry, index) => (
+                         <Cell key={`cell-${index}`} fill={entry.fillActual} /> // Use calculated fill per entry
+                       ))}
+                   </Bar>
+                 </BarChart>
+               </ResponsiveContainer>
             </ChartContainer>
 
             {/* Detailed List */}
@@ -194,7 +206,7 @@ export function ExpenseReport({ transactions, budgets }: ExpenseReportProps) {
                 {reportData.map((item) => (
                   <div key={item.category} className="space-y-1">
                     <div className="flex justify-between items-center text-sm">
-                      <span className="font-medium">{item.category}</span>
+                      <span className="font-medium">{item.category}</span> {/* Display original casing */}
                        <span className={cn("font-semibold", item.isOverBudget ? "text-destructive" : "text-foreground")}>
                          {formatCurrency(item.actual)}
                           {item.budget > 0 && (
@@ -211,7 +223,7 @@ export function ExpenseReport({ transactions, budgets }: ExpenseReportProps) {
                         aria-label={`${item.category} budget progress`}
                       />
                     )}
-                     {item.budget === 0 && (
+                     {item.budget === 0 && item.actual > 0 && ( // Only show 'No budget set' if there was actual spending
                         <p className="text-xs text-muted-foreground italic text-right">No budget set</p>
                      )}
                   </div>
