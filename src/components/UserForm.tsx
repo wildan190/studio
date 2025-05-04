@@ -72,7 +72,9 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
      } else {
        form.reset({ username: "", password: "", role: "user" }); // Reset to default add state
      }
-   }, [initialData, form]);
+     // Removed `form` from dependencies as it can cause infinite loops if its reference changes.
+     // Resetting based on `initialData` is the intended behavior here.
+   }, [initialData]);
 
 
   const handleSubmit = (values: FormValues) => {
