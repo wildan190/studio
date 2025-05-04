@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { v4 as uuidv4 } from 'uuid';
+import type { v4 as uuidv4 } from 'uuid'; // Import type only initially
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
@@ -12,52 +12,52 @@ import { TransactionList } from "@/components/TransactionList";
 import { CashFlowSummary } from "@/components/CashFlowSummary";
 import { BudgetForm } from "@/components/BudgetForm";
 import { BudgetList } from "@/components/BudgetList";
-import { ExpenseReport } from "@/components/ExpenseReport"; // Renamed for clarity
+import { ExpenseReport } from "@/components/ExpenseReport";
 import type { Transaction, Budget } from "@/types";
 import useLocalStorage from "@/hooks/useLocalStorage";
 
-// Lazily import uuid to avoid server-side issues
-let uuid: typeof uuidv4 | null = null;
-const loadUuid = async () => {
-  if (!uuid) {
-    const uuidModule = await import('uuid');
-    uuid = uuidModule.v4;
-  }
-  return uuid;
-};
-
+// Define a state to hold the dynamically imported uuid function
+let generateUuid: typeof uuidv4 | null = null;
 
 export default function Home() {
   const [transactions, setTransactions] = useLocalStorage<Transaction[]>("bizflow_transactions", []);
   const [budgets, setBudgets] = useLocalStorage<Budget[]>("bizflow_budgets", []);
   const [isClient, setIsClient] = React.useState(false);
+  const [uuidLoaded, setUuidLoaded] = React.useState(false);
 
+  // Dynamically import uuid on component mount (client-side only)
   React.useEffect(() => {
     setIsClient(true);
-    loadUuid(); // Load uuid on client mount
+    import('uuid')
+      .then((uuidModule) => {
+        generateUuid = uuidModule.v4;
+        setUuidLoaded(true);
+      })
+      .catch(err => console.error("Failed to load uuid", err));
   }, []);
 
-  const handleAddTransaction = async (data: Omit<Transaction, 'id'>) => {
-    const generateId = await loadUuid();
-    if (!generateId) {
+  const handleAddTransaction = (data: Omit<Transaction, 'id'>) => {
+    if (!generateUuid) {
       console.error("UUID generation function not loaded");
+      // Optionally, show a user-facing error message
       return;
     }
     const newTransaction: Transaction = {
       ...data,
-      id: generateId(),
-      date: new Date(data.date),
+      id: generateUuid(),
+      date: new Date(data.date), // Ensure date is a Date object
     };
-    setTransactions([...transactions, newTransaction].sort((a, b) => b.date.getTime() - a.date.getTime()));
+    setTransactions(prevTransactions =>
+      [...prevTransactions, newTransaction].sort((a, b) => b.date.getTime() - a.date.getTime())
+    );
   };
 
   const handleDeleteTransaction = (id: string) => {
     setTransactions(transactions.filter((t) => t.id !== id));
   };
 
-  const handleAddBudget = async (data: Omit<Budget, 'id'>) => {
-    const generateId = await loadUuid();
-     if (!generateId) {
+  const handleAddBudget = (data: Omit<Budget, 'id'>) => {
+     if (!generateUuid) {
        console.error("UUID generation function not loaded");
        return;
      }
@@ -73,9 +73,11 @@ export default function Home() {
        // Add new budget
        const newBudget: Budget = {
          ...data,
-         id: generateId(),
+         id: generateUuid(),
        };
-       setBudgets([...budgets, newBudget].sort((a, b) => a.category.localeCompare(b.category)));
+       setBudgets(prevBudgets =>
+         [...prevBudgets, newBudget].sort((a, b) => a.category.localeCompare(b.category))
+        );
      }
    };
 
@@ -84,8 +86,8 @@ export default function Home() {
   };
 
 
-  // Avoid rendering components reliant on localStorage until client-side hydration
-  if (!isClient) {
+  // Render loading state or skeleton if not client or uuid not loaded yet
+  if (!isClient || !uuidLoaded) {
     return (
       <div className="container mx-auto p-4 md:p-8 max-w-4xl">
         <header className="mb-8 text-center">
@@ -98,10 +100,15 @@ export default function Home() {
           <div className="h-60 bg-muted rounded-lg animate-pulse"></div>
           <div className="h-80 bg-muted rounded-lg animate-pulse"></div>
         </div>
+        <footer className="mt-12 text-center text-muted-foreground text-sm">
+            <Separator className="my-4" />
+             Loading...
+        </footer>
       </div>
     );
   }
 
+  // Render the main application UI once client and uuid are ready
   return (
     <div className="container mx-auto p-4 md:p-8 max-w-4xl">
       <header className="mb-8 text-center">
@@ -123,7 +130,7 @@ export default function Home() {
             <CashFlowSummary transactions={transactions} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="md:col-span-1">
-                <Card className="shadow-md">
+                <Card className="shadow-md rounded-lg">
                   <CardHeader>
                     <CardTitle className="text-lg">Add New Transaction</CardTitle>
                   </CardHeader>
@@ -133,7 +140,7 @@ export default function Home() {
                 </Card>
               </div>
               <div className="md:col-span-2">
-                <Card className="shadow-md">
+                <Card className="shadow-md rounded-lg">
                   <CardHeader>
                     <CardTitle className="text-lg">Transaction History</CardTitle>
                   </CardHeader>
@@ -149,7 +156,7 @@ export default function Home() {
           <TabsContent value="budgets" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
-                    <Card className="shadow-md">
+                    <Card className="shadow-md rounded-lg">
                         <CardHeader>
                             <CardTitle className="text-lg">Add/Edit Budget</CardTitle>
                         </CardHeader>
@@ -159,7 +166,7 @@ export default function Home() {
                     </Card>
                 </div>
                  <div className="md:col-span-2">
-                    <Card className="shadow-md">
+                    <Card className="shadow-md rounded-lg">
                         <CardHeader>
                             <CardTitle className="text-lg">Budget List</CardTitle>
                         </CardHeader>
@@ -185,7 +192,7 @@ export default function Home() {
                </CardHeader>
                <CardContent>
                  <p className="text-muted-foreground">Budget planning feature coming soon!</p>
-                 {/* Placeholder for Budget Planning Component */}
+                 {}
                </CardContent>
              </Card>
           </TabsContent>
@@ -201,4 +208,3 @@ export default function Home() {
     </div>
   );
 }
-
