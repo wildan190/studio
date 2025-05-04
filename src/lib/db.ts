@@ -1,43 +1,26 @@
-import { Pool } from 'pg';
+// src/lib/db.ts
+import { PrismaClient } from '@prisma/client';
 
-// Ensure the environment variable is loaded
-if (!process.env.POSTGRES_URL) {
-  throw new Error('Missing environment variable: POSTGRES_URL');
+// Declare a global variable to hold the PrismaClient instance
+// This helps prevent creating multiple instances in development due to HMR
+declare global {
+  // eslint-disable-next-line no-var
+  var prisma: PrismaClient | undefined;
 }
 
-// Create a connection pool
-// The pool manages multiple client connections automatically
-export const pool = new Pool({
-  connectionString: process.env.POSTGRES_URL,
-  // You might need SSL configuration depending on your PostgreSQL provider
-  // ssl: {
-  //   rejectUnauthorized: false, // Use only for development/testing if necessary
-  // },
+// Instantiate PrismaClient
+// Use the global instance if it exists, otherwise create a new one
+const prisma = global.prisma || new PrismaClient({
+    // Optional: Enable logging for debugging specific queries
+    // log: ['query', 'info', 'warn', 'error'],
 });
 
-// Optional: Test the connection on startup (can be useful for debugging)
-pool.connect((err, client, release) => {
-  if (err) {
-    return console.error('Error acquiring client', err.stack);
-  }
-  client.query('SELECT NOW()', (err, result) => {
-    release(); // Release the client back to the pool
-    if (err) {
-      return console.error('Error executing query', err.stack);
-    }
-    console.log('Successfully connected to PostgreSQL database at:', result.rows[0].now);
-  });
-});
+// Assign the instance to the global variable in development environment
+if (process.env.NODE_ENV !== 'production') {
+  global.prisma = prisma;
+}
 
-// Example usage (you'll use this in your Server Actions or API routes):
-// import { pool } from '@/lib/db';
-//
-// async function getData() {
-//   const client = await pool.connect();
-//   try {
-//     const res = await client.query('SELECT * FROM your_table');
-//     return res.rows;
-//   } finally {
-//     client.release(); // Always release the client
-//   }
-// }
+// Export the PrismaClient instance
+export default prisma;
+
+// No need for the pool connection test anymore, Prisma handles connections.

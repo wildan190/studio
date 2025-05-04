@@ -1,34 +1,36 @@
-export type TransactionType = 'income' | 'expense';
+import type { Role as PrismaRole, TransactionType as PrismaTransactionType, BudgetPeriod as PrismaBudgetPeriod } from '@prisma/client';
+
+// Use Prisma enums directly or create app-level enums that map if needed
+export type TransactionType = PrismaTransactionType; // 'income' | 'expense'
+export type BudgetPeriod = PrismaBudgetPeriod; // 'monthly' | 'yearly'
+export type Role = PrismaRole; // 'superadmin' | 'user'
 
 export interface Transaction {
   id: string;
   type: TransactionType;
   description: string; // Source for income, Category for expense
-  amount: number;
+  amount: number; // Prisma Decimal/Float maps to number
   date: Date;
-  // Optional: user_id if needed on the client, but usually handled server-side
-  // user_id?: string;
+  // userId is usually not needed directly on the client transaction object
+  // userId?: string;
 }
-
-export type BudgetPeriod = 'monthly' | 'yearly'; // Add more periods as needed
 
 export interface Budget {
   id: string;
   category: string; // Matches expense transaction description/category
-  amount: number;
+  amount: number; // Prisma Decimal/Float maps to number
   period: BudgetPeriod;
-   // Optional: user_id if needed on the client
-  // user_id?: string;
+   // userId is usually not needed directly on the client budget object
+  // userId?: string;
 }
 
 // --- User Management Types ---
-export type Role = 'superadmin' | 'user'; // Define available roles
 
 export interface User {
   id: string;
   username: string;
   // Client-side User object should NOT contain the password hash
-  passwordHash?: string; // Make optional or remove completely for client-side type
+  passwordHash?: string; // Internal representation, ensure it's not sent to client unless needed (e.g., for auth check ONLY)
   role: Role;
   // Permissions are stored as JSON in DB, but represented as string array here
   permissions: string[];

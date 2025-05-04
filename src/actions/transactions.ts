@@ -2,22 +2,23 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { pool } from '@/lib/db';
-import type { Transaction, TransactionType } from '@/types';
+import prisma from '@/lib/db'; // Import Prisma client instance
+import type { Transaction, TransactionType as AppTransactionType } from '@/types';
+import { TransactionType as PrismaTransactionType } from '@prisma/client';
 
 // --- Schemas ---
 
 const TransactionSchema = z.object({
   id: z.string().uuid(),
-  type: z.enum(['income', 'expense']),
+  type: z.nativeEnum(PrismaTransactionType), // Use Prisma enum
   description: z.string(),
-  amount: z.number(),
+  amount: z.number(), // Prisma returns number for Decimal/Float
   date: z.date(),
-  user_id: z.string().uuid(), // Foreign key to users table
+  userId: z.string().uuid(), // Renamed from user_id for consistency
 });
 
 const AddTransactionInputSchema = z.object({
-  type: z.enum(['income', 'expense']),
+  type: z.nativeEnum(PrismaTransactionType),
   description: z.string().min(1, 'Description is required'),
   amount: z.coerce.number().positive('Amount must be positive'),
   date: z.date({ required_error: 'Date is required' }),
@@ -27,49 +28,35 @@ type AddTransactionInput = z.infer<typeof AddTransactionInputSchema>;
 
 // --- Helper Functions ---
 
-const mapRowToTransaction = (row: any): Transaction => ({
-  id: row.id,
-  type: row.type,
-  description: row.description,
-  amount: parseFloat(row.amount), // Ensure amount is a number
-  date: new Date(row.date),
+// Map Prisma Transaction to Application Transaction Type
+const mapPrismaTransactionToApp = (prismaTransaction: NonNullable<Awaited<ReturnType<typeof prisma.transaction.findUnique>>>): Transaction => ({
+  id: prismaTransaction.id,
+  type: prismaTransaction.type as AppTransactionType, // Cast to AppTransactionType
+  description: prismaTransaction.description,
+  amount: prismaTransaction.amount, // Prisma Decimal is number; ensure compatibility if needed
+  date: new Date(prismaTransaction.date), // Ensure date is a Date object
 });
-
 
 // --- Server Actions ---
 
-/**
- * Fetches transactions for a specific user, ordered by date descending.
- * @param userId The ID of the user whose transactions to fetch.
- * @returns A promise that resolves to an array of transactions.
- */
 export async function getTransactionsAction(userId: string): Promise<Transaction[]> {
   if (!userId) {
     console.error('getTransactionsAction: userId is required');
     return [];
   }
-  const client = await pool.connect();
   try {
-    const result = await client.query<Transaction>(
-      'SELECT id, type, description, amount, date FROM transactions WHERE user_id = $1 ORDER BY date DESC',
-      [userId]
-    );
-    // Ensure date objects are correctly parsed (pg might return strings)
-    return result.rows.map(mapRowToTransaction);
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: userId },
+      orderBy: { date: 'desc' },
+    });
+    // Map Prisma results to Application Transaction type
+    return transactions.map(mapPrismaTransactionToApp);
   } catch (error) {
-    console.error('Error fetching transactions:', error);
-    // Consider throwing a more specific error or returning an error object
+    console.error('Error fetching transactions with Prisma:', error);
     throw new Error('Failed to fetch transactions.');
-  } finally {
-    client.release();
   }
 }
 
-/**
- * Adds a new transaction for a specific user.
- * @param data The transaction data including the userId.
- * @returns A promise that resolves to the newly created transaction or throws an error.
- */
 export async function addTransactionAction(data: AddTransactionInput): Promise<Transaction> {
    const validation = AddTransactionInputSchema.safeParse(data);
    if (!validation.success) {
@@ -78,85 +65,67 @@ export async function addTransactionAction(data: AddTransactionInput): Promise<T
    }
 
   const { type, description, amount, date, userId } = validation.data;
-  const client = await pool.connect();
+
   try {
-    const result = await client.query(
-      'INSERT INTO transactions (type, description, amount, date, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, type, description, amount, date',
-      [type, description, amount, date, userId]
-    );
-    const newTransaction = mapRowToTransaction(result.rows[0]);
-    revalidatePath('/transactions'); // Revalidate the transactions page cache
-    revalidatePath('/'); // Revalidate dashboard if it shows transactions
-    revalidatePath('/reports'); // Revalidate reports page
-    return newTransaction;
+    const newTransaction = await prisma.transaction.create({
+      data: {
+        userId: userId,
+        type: type,
+        description: description,
+        amount: amount,
+        date: date, // Prisma expects Date object
+      },
+    });
+    revalidatePath('/transactions');
+    revalidatePath('/');
+    revalidatePath('/reports');
+    return mapPrismaTransactionToApp(newTransaction);
   } catch (error) {
-    console.error('Error adding transaction:', error);
+    console.error('Error adding transaction with Prisma:', error);
     throw new Error('Failed to add transaction.');
-  } finally {
-    client.release();
   }
 }
 
-/**
- * Deletes a transaction by its ID and user ID.
- * @param id The ID of the transaction to delete.
- * @param userId The ID of the user who owns the transaction (for security).
- * @returns A promise that resolves when the deletion is complete or throws an error.
- */
 export async function deleteTransactionAction(id: string, userId: string): Promise<void> {
    if (!id || !userId) {
         console.error('deleteTransactionAction: Both id and userId are required.');
         throw new Error('Transaction ID and User ID are required.');
     }
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      'DELETE FROM transactions WHERE id = $1 AND user_id = $2 RETURNING id', // Verify user ownership
-      [id, userId]
-    );
 
-    if (result.rowCount === 0) {
-        throw new Error('Transaction not found or user does not have permission to delete.');
+  try {
+    // Verify user ownership before deleting
+    const transaction = await prisma.transaction.findUnique({
+        where: { id: id }
+    });
+
+    if (!transaction) {
+        throw new Error('Transaction not found.');
+    }
+    if (transaction.userId !== userId) {
+         throw new Error('User does not have permission to delete this transaction.');
     }
 
-    revalidatePath('/transactions'); // Revalidate the transactions page cache
-    revalidatePath('/'); // Revalidate dashboard if it shows transactions
-    revalidatePath('/reports'); // Revalidate reports page
-  } catch (error) {
-    console.error('Error deleting transaction:', error);
-    throw new Error('Failed to delete transaction.');
-  } finally {
-    client.release();
+    await prisma.transaction.delete({
+      where: { id: id },
+      // No need to check userId here again as we did it above
+    });
+
+    revalidatePath('/transactions');
+    revalidatePath('/');
+    revalidatePath('/reports');
+  } catch (error: any) {
+    console.error('Error deleting transaction with Prisma:', error);
+     if (error.code === 'P2025') { // Record to delete not found
+         // This might happen in a race condition, treat as success or specific error
+         console.warn(`Transaction with ID ${id} not found for deletion (P2025).`);
+         // Depending on desired behavior, you might not throw here
+         // throw new Error('Transaction not found.');
+     } else if (error instanceof Error && (error.message.includes('not found') || error.message.includes('permission'))) {
+         throw error; // Re-throw specific known errors
+     } else {
+        throw new Error('Failed to delete transaction.');
+    }
   }
 }
 
-// --- Database Initialization (Run once, e.g., in a migration script) ---
-/*
- * This is an example of how you might initialize the table.
- * In a real application, use a proper migration tool (e.g., node-pg-migrate).
- */
-export async function initializeTransactionsTable(): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS transactions (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- Link to users table
-        type VARCHAR(10) NOT NULL CHECK (type IN ('income', 'expense')),
-        description TEXT NOT NULL,
-        amount NUMERIC(12, 2) NOT NULL CHECK (amount >= 0), -- Example precision
-        date DATE NOT NULL,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-     await client.query('CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id);');
-     await client.query('CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);');
-     console.log('Transactions table initialized successfully.');
-  } catch (error) {
-    console.error('Error initializing transactions table:', error);
-    throw new Error('Failed to initialize database tables.');
-  } finally {
-    client.release();
-  }
-}
+// Remove initializeTransactionsTable function - Prisma handles schema management

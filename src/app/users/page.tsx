@@ -6,8 +6,8 @@ import { useAppContext } from '@/context/AppContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { UserForm } from "@/components/UserForm";
-import { UserList } from "@/components/UserList";
+import { UserForm } from "@/components/UserForm"; // Ensure path is correct
+import { UserList } from "@/components/UserList"; // Ensure path is correct
 import type { User } from "@/types";
 import { ITEMS_PER_PAGE } from "@/lib/constants";
 import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
@@ -77,6 +77,7 @@ export default function UsersPage() {
 
     // --- Handlers ---
     const handleAddUser = async (data: any) => {
+       // Ensure role is passed correctly, potentially mapping from string if form returns string
        const success = await addUser({ username: data.username, password: data.password, role: data.role });
         if (success) {
             setEditingUser(null); // Clear editing state after successful add
@@ -89,7 +90,7 @@ export default function UsersPage() {
         if (!editingUser) return;
         const success = await updateUser(editingUser.id, {
              username: data.username,
-             role: data.role,
+             role: data.role, // Ensure role is passed correctly
              ...(data.password && { password: data.password })
          });
         if (success) {
@@ -140,7 +141,7 @@ export default function UsersPage() {
                 <CardHeader>
                 <CardTitle className="text-destructive">Security Warning</CardTitle>
                 <CardDescription className="text-destructive/90">
-                    <strong>Important:</strong> Password handling in this demonstration uses secure hashing (bcrypt) via server actions, which is a significant improvement. However, ensure your database connection and environment variables are properly secured in production. Permissions are enforced via server actions where appropriate.
+                    <strong>Important:</strong> Password handling uses secure hashing (bcrypt). Permissions are enforced server-side. Ensure database connection and environment variables are properly secured.
                 </CardDescription>
                 </CardHeader>
              </Card>
@@ -168,6 +169,7 @@ export default function UsersPage() {
                     <CardTitle>Current Users</CardTitle>
                     <CardDescription>List of all registered users and their roles. Edit, delete, or manage permissions.</CardDescription>
                     </CardHeader>
+                    {/* UserList expects users of type User[] which should be correct */}
                         <UserList
                             users={paginatedUsers}
                             onDelete={handleDeleteUser}

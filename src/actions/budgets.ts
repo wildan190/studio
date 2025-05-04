@@ -2,23 +2,24 @@
 
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
-import { pool } from '@/lib/db';
-import type { Budget, BudgetPeriod } from '@/types';
+import prisma from '@/lib/db'; // Import Prisma client instance
+import type { Budget, BudgetPeriod as AppBudgetPeriod } from '@/types';
+import { BudgetPeriod as PrismaBudgetPeriod } from '@prisma/client';
 
 // --- Schemas ---
 
 const BudgetSchema = z.object({
   id: z.string().uuid(),
   category: z.string(),
-  amount: z.number(),
-  period: z.enum(['monthly', 'yearly']),
-  user_id: z.string().uuid(), // Foreign key to users table
+  amount: z.number(), // Prisma returns number for Decimal/Float
+  period: z.nativeEnum(PrismaBudgetPeriod), // Use Prisma enum
+  userId: z.string().uuid(), // Renamed from user_id
 });
 
 const AddBudgetInputSchema = z.object({
   category: z.string().min(1, 'Category is required'),
   amount: z.coerce.number().positive('Budget amount must be positive'),
-  period: z.enum(['monthly', 'yearly'], { required_error: 'Period is required' }),
+  period: z.nativeEnum(PrismaBudgetPeriod, { required_error: 'Period is required' }),
   userId: z.string().uuid('User ID is required'),
 });
 type AddBudgetInput = z.infer<typeof AddBudgetInputSchema>;
@@ -26,43 +27,36 @@ type AddBudgetInput = z.infer<typeof AddBudgetInputSchema>;
 
 // --- Helper Functions ---
 
-const mapRowToBudget = (row: any): Budget => ({
-    id: row.id,
-    category: row.category,
-    amount: parseFloat(row.amount), // Ensure amount is a number
-    period: row.period,
+// Map Prisma Budget to Application Budget Type
+const mapPrismaBudgetToApp = (prismaBudget: NonNullable<Awaited<ReturnType<typeof prisma.budget.findUnique>>>): Budget => ({
+    id: prismaBudget.id,
+    category: prismaBudget.category,
+    amount: prismaBudget.amount, // Prisma Decimal is number
+    period: prismaBudget.period as AppBudgetPeriod, // Cast to AppBudgetPeriod
 });
 
 // --- Server Actions ---
 
-/**
- * Fetches budgets for a specific user, ordered by category.
- * @param userId The ID of the user whose budgets to fetch.
- * @returns A promise that resolves to an array of budgets.
- */
 export async function getBudgetsAction(userId: string): Promise<Budget[]> {
   if (!userId) {
     console.error('getBudgetsAction: userId is required');
     return [];
   }
-  const client = await pool.connect();
   try {
-    const result = await client.query<Budget>(
-      'SELECT id, category, amount, period FROM budgets WHERE user_id = $1 ORDER BY category',
-      [userId]
-    );
-    return result.rows.map(mapRowToBudget);
+    const budgets = await prisma.budget.findMany({
+      where: { userId: userId },
+      orderBy: { category: 'asc' }, // Prisma sorts case-sensitively by default, adjust if needed
+    });
+    return budgets.map(mapPrismaBudgetToApp);
   } catch (error) {
-    console.error('Error fetching budgets:', error);
+    console.error('Error fetching budgets with Prisma:', error);
     throw new Error('Failed to fetch budgets.');
-  } finally {
-    client.release();
   }
 }
 
 /**
  * Adds a new budget or updates an existing one for a specific user based on category and period.
- * Uses UPSERT functionality.
+ * Handles case-insensitive category matching for upsert logic.
  * @param data The budget data including the userId.
  * @returns A promise that resolves to the created or updated budget or throws an error.
  */
@@ -73,131 +67,98 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
      throw new Error(`Invalid budget data: ${validation.error.errors.map(e => e.message).join(', ')}`);
    }
   const { category, amount, period, userId } = validation.data;
-  const client = await pool.connect();
+  const categoryLower = category.toLowerCase(); // For case-insensitive check
 
   try {
-    // UPSERT: Insert or update based on unique constraint (user_id, lower(category), period)
-    const result = await client.query(
-      `INSERT INTO budgets (user_id, category, amount, period)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id, lower_category, period)
-       DO UPDATE SET amount = EXCLUDED.amount, category = EXCLUDED.category, updated_at = NOW()
-       RETURNING id, category, amount, period`,
-      [userId, category, amount, period]
-    );
+    // 1. Find existing budget (case-insensitive)
+    const existingBudget = await prisma.budget.findFirst({
+      where: {
+        userId: userId,
+        period: period,
+        // Case-insensitive search requires finding all and filtering, or DB setup
+        // Prisma doesn't have a built-in case-insensitive unique find for this complex key easily.
+        // Alternative: Fetch all for the user/period and filter in code.
+        category: { mode: 'insensitive', equals: categoryLower }, // Use insensitive mode if DB supports
+      }
+    });
 
-    const upsertedBudget = mapRowToBudget(result.rows[0]);
-    revalidatePath('/budgets'); // Revalidate the budgets page cache
-    revalidatePath('/'); // Revalidate dashboard if it shows budget info
-    revalidatePath('/reports'); // Revalidate reports page
-    return upsertedBudget;
+    let upsertedBudget;
+    if (existingBudget) {
+      // 2. Update existing budget
+      upsertedBudget = await prisma.budget.update({
+        where: { id: existingBudget.id },
+        data: {
+          amount: amount,
+          category: category, // Update category to potentially fix casing
+          updatedAt: new Date(), // Ensure updated_at is set
+        },
+      });
+      console.log(`Updated budget for category: ${category} (${period})`);
+    } else {
+      // 3. Create new budget
+      upsertedBudget = await prisma.budget.create({
+        data: {
+          userId: userId,
+          category: category, // Store original casing
+          amount: amount,
+          period: period,
+        },
+      });
+      console.log(`Created new budget for category: ${category} (${period})`);
+    }
+
+    revalidatePath('/budgets');
+    revalidatePath('/');
+    revalidatePath('/reports');
+    return mapPrismaBudgetToApp(upsertedBudget);
+
   } catch (error) {
-    console.error('Error adding or updating budget:', error);
+    console.error('Error adding or updating budget with Prisma:', error);
+    // Handle potential unique constraint issues if case-insensitive check fails or isn't perfect
     throw new Error('Failed to save budget.');
-  } finally {
-    client.release();
   }
 }
 
-/**
- * Deletes a budget by its ID and user ID.
- * @param id The ID of the budget to delete.
- * @param userId The ID of the user who owns the budget (for security).
- * @returns A promise that resolves when the deletion is complete or throws an error.
- */
+
 export async function deleteBudgetAction(id: string, userId: string): Promise<void> {
    if (!id || !userId) {
         console.error('deleteBudgetAction: Both id and userId are required.');
         throw new Error('Budget ID and User ID are required.');
     }
-  const client = await pool.connect();
-  try {
-     const result = await client.query(
-      'DELETE FROM budgets WHERE id = $1 AND user_id = $2 RETURNING id', // Verify user ownership
-      [id, userId]
-    );
 
-    if (result.rowCount === 0) {
-        throw new Error('Budget not found or user does not have permission to delete.');
+  try {
+     // Verify ownership before deleting
+     const budget = await prisma.budget.findUnique({
+         where: { id: id }
+     });
+
+     if (!budget) {
+         throw new Error('Budget not found.');
+     }
+     if (budget.userId !== userId) {
+         throw new Error('User does not have permission to delete this budget.');
+     }
+
+    await prisma.budget.delete({
+      where: { id: id },
+       // No userId check needed here as we verified above
+    });
+
+    revalidatePath('/budgets');
+    revalidatePath('/');
+    revalidatePath('/reports');
+  } catch (error: any) {
+    console.error('Error deleting budget with Prisma:', error);
+    if (error.code === 'P2025') { // Record to delete not found
+        console.warn(`Budget with ID ${id} not found for deletion (P2025).`);
+        // throw new Error('Budget not found.'); // Or treat as success
+    } else if (error instanceof Error && (error.message.includes('not found') || error.message.includes('permission'))) {
+        throw error; // Re-throw specific known errors
+    } else {
+        throw new Error('Failed to delete budget.');
     }
-
-    revalidatePath('/budgets'); // Revalidate the budgets page cache
-    revalidatePath('/'); // Revalidate dashboard if it shows budget info
-    revalidatePath('/reports'); // Revalidate reports page
-  } catch (error) {
-    console.error('Error deleting budget:', error);
-    throw new Error('Failed to delete budget.');
-  } finally {
-    client.release();
   }
 }
 
 
-// --- Database Initialization (Run once, e.g., in a migration script) ---
-/*
- * This is an example of how you might initialize the table.
- * In a real application, use a proper migration tool (e.g., node-pg-migrate).
- */
-export async function initializeBudgetsTable(): Promise<void> {
-  const client = await pool.connect();
-  try {
-     // Add the lower_category column first if it doesn't exist
-     try {
-        await client.query('ALTER TABLE budgets ADD COLUMN lower_category TEXT;');
-        console.log("Column 'lower_category' added successfully.");
-      } catch (alterError: any) {
-        // Ignore error if the column already exists (error code 42701 for duplicate column)
-        if (alterError.code !== '42701') {
-          throw alterError; // Re-throw other errors
-        }
-        console.log("Column 'lower_category' already exists.");
-      }
-
-       // Populate the lower_category column for existing rows
-        await client.query('UPDATE budgets SET lower_category = lower(category) WHERE lower_category IS NULL;');
-        console.log("Populated 'lower_category' for existing rows.");
-
-
-     // Now create the main table structure
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS budgets (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        category TEXT NOT NULL,
-        amount NUMERIC(12, 2) NOT NULL CHECK (amount >= 0),
-        period VARCHAR(10) NOT NULL CHECK (period IN ('monthly', 'yearly')),
-        lower_category TEXT GENERATED ALWAYS AS (lower(category)) STORED, -- Generated column for case-insensitive check
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-        -- Removed UNIQUE constraint here, will add below
-      );
-    `);
-
-      // Add the unique constraint separately to handle potential pre-existence
-      try {
-            await client.query('ALTER TABLE budgets ADD CONSTRAINT budgets_user_category_period_unique UNIQUE (user_id, lower_category, period);');
-            console.log("Unique constraint 'budgets_user_category_period_unique' added successfully.");
-      } catch (constraintError: any) {
-            // Ignore error if constraint already exists (error code 42P07 for duplicate table/constraint)
-           if (constraintError.code !== '42P07') {
-                console.error('Error adding unique constraint:', constraintError)
-                 // If constraint fails due to duplicate data, you might need manual cleanup
-                if(constraintError.code === '23505') { // unique_violation
-                    console.error("Duplicate budget entries found. Please clean up data manually before applying the constraint.")
-                }
-               // throw constraintError; // Re-throw other errors
-           } else {
-                console.log("Unique constraint 'budgets_user_category_period_unique' already exists.");
-            }
-      }
-
-
-    await client.query('CREATE INDEX IF NOT EXISTS idx_budgets_user_id ON budgets(user_id);');
-    console.log('Budgets table initialized successfully.');
-  } catch (error) {
-    console.error('Error initializing budgets table:', error);
-    throw new Error('Failed to initialize database tables.');
-  } finally {
-    client.release();
-  }
-}
+// Remove initializeBudgetsTable function - Prisma handles schema management

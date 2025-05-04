@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  username      String        @unique // Use application logic for case-insensitivity during creation/lookup
+  passwordHash  String        @map("password_hash") @db.Text
+  role          Role
+  permissions   Json          @default("[]") // Store permissions as JSON array
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  transactions  Transaction[]
+  budgets       Budget[]
+
+  @@map("users")
+}
+
+model Transaction {
+  id          String          @id @default(uuid()) @db.Uuid
+  userId      String          @map("user_id") @db.Uuid
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  description String          @db.Text // Store original case, handle matching case-insensitively in application code
+  amount      Float           @db.Decimal(12, 2) // Use Decimal for financial values
+  date        DateTime        @db.Date // Store only the date part
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([date])
+  @@map("transactions")
+}
+
+model Budget {
+  id        String       @id @default(uuid()) @db.Uuid
+  userId    String       @map("user_id") @db.Uuid
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category  String       // Store original case, handle matching case-insensitively in application code
+  amount    Float        @db.Decimal(12, 2)
+  period    BudgetPeriod
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Enforce uniqueness at the application level (within addOrUpdateBudgetAction)
+  // by querying for existing budget with lowercase category before inserting/updating.
+  // Prisma doesn't directly support unique constraints on lowercase versions without raw SQL/extensions.
+  @@index([userId])
+  @@map("budgets")
+}
+
+
+// --- Enums ---
+
+enum TransactionType {
+  income
+  expense
+
+  @@map("transaction_type") // Optional: Map to a specific DB enum type if needed
+}
+
+enum BudgetPeriod {
+  monthly
+  yearly
+
+  @@map("budget_period") // Optional: Map to a specific DB enum type if needed
+}
+
+enum Role {
+  superadmin
+  user
+
+  @@map("user_role") // Optional: Map to a specific DB enum type if needed
+}
