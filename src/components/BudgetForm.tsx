@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select"
 import type { Budget, BudgetPeriod } from "@/types";
 import { toast } from "@/hooks/use-toast";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 const formSchema = z.object({
   category: z.string().min(1, "Category is required"),
@@ -35,11 +36,13 @@ const formSchema = z.object({
 type BudgetFormValues = z.infer<typeof formSchema>;
 
 interface BudgetFormProps {
-  onSubmit: (data: Omit<Budget, 'id'>) => void;
-  existingCategories?: string[]; // Optional: for suggesting categories or preventing duplicates in certain modes
+   // The onSubmit now expects the raw form data. The page component will add the userId.
+  onSubmit: (data: BudgetFormValues) => Promise<void> | void;
+  existingCategories?: string[];
 }
 
 export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProps) {
+   const { isMutating } = useAppContext(); // Get mutation state
   const form = useForm<BudgetFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -49,13 +52,11 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
     },
   });
 
-  const handleSubmit = (values: BudgetFormValues) => {
-    onSubmit(values);
-    toast({
-        title: "Budget Saved",
-        description: `Budget for ${values.category} (${values.period}) has been saved.`,
-      });
-    form.reset(); // Reset form after successful submission
+  const handleSubmit = async (values: BudgetFormValues) => {
+     // No need to add userId here, the page component handles it
+     await onSubmit(values);
+     // Toast is handled by the page component/action now
+    form.reset();
   };
 
   return (
@@ -68,8 +69,7 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
             <FormItem>
               <FormLabel>Expense Category</FormLabel>
               <FormControl>
-                <Input placeholder="e.g., Rent, Supplies, Marketing" {...field} />
-                {/* Consider adding suggestions based on existing transaction descriptions */}
+                <Input placeholder="e.g., Rent, Supplies, Marketing" {...field} disabled={isMutating} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -83,7 +83,7 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
             <FormItem>
               <FormLabel>Budget Amount (IDR)</FormLabel>
               <FormControl>
-                <Input type="number" step="1" placeholder="0" {...field} />
+                <Input type="number" step="1" placeholder="0" {...field} disabled={isMutating}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -96,7 +96,7 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
           render={({ field }) => (
             <FormItem>
               <FormLabel>Period</FormLabel>
-                 <Select onValueChange={field.onChange} defaultValue={field.value}>
+                 <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isMutating}>
                     <FormControl>
                         <SelectTrigger>
                         <SelectValue placeholder="Select budget period" />
@@ -105,7 +105,6 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
                     <SelectContent>
                         <SelectItem value="monthly">Monthly</SelectItem>
                         <SelectItem value="yearly">Yearly</SelectItem>
-                        {/* Add other periods like 'quarterly' if needed */}
                     </SelectContent>
                 </Select>
               <FormMessage />
@@ -113,7 +112,9 @@ export function BudgetForm({ onSubmit, existingCategories = [] }: BudgetFormProp
           )}
         />
 
-        <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">Save Budget</Button>
+        <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isMutating}>
+             {isMutating ? 'Saving...' : 'Save Budget'}
+         </Button>
       </form>
     </Form>
   );

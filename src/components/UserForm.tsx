@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { useEffect } from "react"; // Import useEffect
+import { useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -25,6 +25,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import type { Role, User } from "@/types";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 // Schema for adding a user (password required)
 const addUserSchema = z.object({
@@ -44,12 +45,14 @@ type AddUserFormValues = z.infer<typeof addUserSchema>;
 type EditUserFormValues = z.infer<typeof editUserSchema>;
 
 interface UserFormProps {
-  onSubmit: (data: AddUserFormValues | EditUserFormValues) => void;
-  initialData?: User | null; // Make initialData optional and accept null
-  onCancel?: () => void; // Optional cancel handler
+  // onSubmit expects raw form data. Page component handles calling the action.
+  onSubmit: (data: AddUserFormValues | EditUserFormValues) => Promise<void> | void;
+  initialData?: User | null;
+  onCancel?: () => void;
 }
 
 export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormProps) {
+  const { isMutating } = useAppContext(); // Get mutation state
   const isEditing = !!initialData;
   const formSchema = isEditing ? editUserSchema : addUserSchema;
   type FormValues = z.infer<typeof formSchema>;
@@ -57,32 +60,29 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: isEditing
-      ? { username: initialData.username, password: "", role: initialData.role } // Set initial values for edit
-      : { username: "", password: "", role: "user" }, // Default for add
+      ? { username: initialData.username, password: "", role: initialData.role }
+      : { username: "", password: "", role: "user" },
   });
 
-   // Effect to reset form when initialData changes (e.g., selecting a different user to edit or cancelling)
    useEffect(() => {
      if (initialData) {
        form.reset({
          username: initialData.username,
-         password: "", // Always clear password field on edit start
+         password: "",
          role: initialData.role,
        });
      } else {
-       form.reset({ username: "", password: "", role: "user" }); // Reset to default add state
+       form.reset({ username: "", password: "", role: "user" });
      }
-     // Removed `form` from dependencies as it can cause infinite loops if its reference changes.
-     // Resetting based on `initialData` is the intended behavior here.
-   }, [initialData]);
+   }, [initialData, form]); // Added form to dependency array
 
 
-  const handleSubmit = (values: FormValues) => {
-    onSubmit(values);
-    if (!isEditing) { // Only reset fully if adding
-        form.reset();
-    }
-    // Resetting after edit is handled by the parent component via initialData change
+  const handleSubmit = async (values: FormValues) => {
+    await onSubmit(values);
+    // Reset is handled by the useEffect or page logic now
+    // if (!isEditing) {
+    //     form.reset();
+    // }
   };
 
   return (
@@ -95,7 +95,7 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
             <FormItem>
               <FormLabel>Username</FormLabel>
               <FormControl>
-                <Input placeholder="Enter username" {...field} />
+                <Input placeholder="Enter username" {...field} disabled={isMutating}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -109,7 +109,7 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
             <FormItem>
               <FormLabel>{isEditing ? 'New Password (optional)' : 'Password'}</FormLabel>
               <FormControl>
-                <Input type="password" placeholder={isEditing ? "Leave blank to keep current" : "Enter password"} {...field} />
+                <Input type="password" placeholder={isEditing ? "Leave blank to keep current" : "Enter password"} {...field} disabled={isMutating}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -122,7 +122,7 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
           render={({ field }) => (
             <FormItem>
               <FormLabel>Role</FormLabel>
-                 <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
+                 <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value} disabled={isMutating}>
                     <FormControl>
                         <SelectTrigger>
                         <SelectValue placeholder="Select role" />
@@ -138,11 +138,11 @@ export function UserForm({ onSubmit, initialData = null, onCancel }: UserFormPro
           )}
         />
         <div className="flex flex-col sm:flex-row gap-2">
-            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">
-                {isEditing ? 'Update User' : 'Add User'}
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isMutating}>
+                {isMutating ? (isEditing ? 'Updating...' : 'Adding...') : (isEditing ? 'Update User' : 'Add User')}
             </Button>
-             {isEditing && onCancel && ( // Show cancel button only when editing
-                 <Button type="button" variant="outline" onClick={onCancel} className="w-full">
+             {isEditing && onCancel && (
+                 <Button type="button" variant="outline" onClick={onCancel} className="w-full" disabled={isMutating}>
                  Cancel Edit
                  </Button>
              )}

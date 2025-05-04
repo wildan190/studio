@@ -1,521 +1,491 @@
 
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback } from 'react';
-import { usePathname, useRouter } from 'next/navigation'; // Import useRouter and usePathname
-import type { v4 as uuidv4 } from 'uuid';
-import type { Transaction, Budget, User, Role } from '@/types';
-import useLocalStorage from '@/hooks/useLocalStorage';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useCallback, useTransition } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import type { Transaction, Budget, User } from '@/types';
 import { toast } from '@/hooks/use-toast';
-import { MANAGEABLE_PATHS, DEFAULT_ALLOWED_PATHS } from '@/lib/constants'; // Import constants
+import { MANAGEABLE_PATHS, DEFAULT_ALLOWED_PATHS } from '@/lib/constants';
 
-// Define a state to hold the dynamically imported uuid function
-let generateUuid: typeof uuidv4 | null = null;
+// Import Server Actions
+import { getTransactionsAction, addTransactionAction, deleteTransactionAction } from '@/actions/transactions';
+import { getBudgetsAction, addOrUpdateBudgetAction, deleteBudgetAction } from '@/actions/budgets';
+import { getUsersAction, getUserForAuthAction, addUserAction, updateUserAction, deleteUserAction, updateUserPermissionsAction, verifyPassword } from '@/actions/users';
 
 // Type for update data (password optional)
 type UserUpdateData = Partial<Pick<User, 'username' | 'role'>> & { password?: string };
 
-
 interface AppContextProps {
   transactions: Transaction[];
   budgets: Budget[];
-  users: User[]; // Add users state
-  currentUser: User | null; // Add currentUser state
-  handleAddTransaction: (data: Omit<Transaction, 'id'>) => void;
-  handleDeleteTransaction: (id: string) => void;
-  handleAddBudget: (data: Omit<Budget, 'id'>) => void;
-  handleDeleteBudget: (id: string) => void;
-  login: (username: string, passwordAttempt: string) => boolean; // Add login function
-  logout: () => void; // Add logout function
-  addUser: (data: Omit<User, 'id' | 'passwordHash' | 'permissions'> & {password: string}) => boolean;
-  updateUser: (id: string, data: UserUpdateData) => boolean; // Add updateUser function
-  deleteUser: (id: string) => boolean; // Add deleteUser function
-  updateUserPermissions: (userId: string, permissions: string[]) => boolean; // Add permission update function
-  isClient: boolean; // Flag to indicate client-side readiness
-  uuidLoaded: boolean; // Flag to indicate uuid readiness
-  authChecked: boolean; // Flag to indicate initial auth check completed
+  users: User[];
+  currentUser: User | null;
+  isLoading: boolean; // Loading state for initial data fetch
+  isMutating: boolean; // Pending state for mutations
+  handleAddTransaction: (data: Omit<Transaction, 'id' | 'date'> & {date: Date; userId: string}) => Promise<void>;
+  handleDeleteTransaction: (id: string) => Promise<void>;
+  handleAddBudget: (data: Omit<Budget, 'id'> & {userId: string}) => Promise<void>;
+  handleDeleteBudget: (id: string) => Promise<void>;
+  login: (username: string, passwordAttempt: string) => Promise<boolean>;
+  logout: () => void;
+  addUser: (data: Omit<User, 'id' | 'passwordHash' | 'permissions'> & {password: string}) => Promise<boolean>;
+  updateUser: (id: string, data: UserUpdateData) => Promise<boolean>;
+  deleteUser: (id: string) => Promise<boolean>;
+  updateUserPermissions: (userId: string, permissions: string[]) => Promise<boolean>;
+  isClient: boolean;
+  authChecked: boolean;
+  fetchData: () => Promise<void>; // Expose function to refetch data
 }
 
 const AppContext = createContext<AppContextProps | undefined>(undefined);
 
-// !! WARNING: Storing user data, especially credentials (even "hashed" ones here),
-// !! in local storage is highly insecure and NOT suitable for production.
-// !! This is for demonstration purposes ONLY. Use a proper backend authentication system.
-const ADMIN_USERNAME = "Admin";
-const ADMIN_PASSWORD = "Password123"; // !! Extremely insecure
-
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [transactions, setTransactions] = useLocalStorage<Transaction[]>("bizflow_transactions", []);
-  const [budgets, setBudgets] = useLocalStorage<Budget[]>("bizflow_budgets", []);
-  const [users, setUsers] = useLocalStorage<User[]>("bizflow_users", []);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [users, setUsers] = useState<User[]>([]); // User list (for superadmin view)
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isClient, setIsClient] = useState(false);
-  const [uuidLoaded, setUuidLoaded] = useState(false);
   const [authChecked, setAuthChecked] = useState(false); // Track initial auth check completed
+  const [isLoading, setIsLoading] = useState(true); // Loading state for initial data
+  const [isPending, startTransition] = useTransition(); // Pending state for mutations
   const router = useRouter();
   const pathname = usePathname();
 
-  // Dynamically import uuid
   useEffect(() => {
     setIsClient(true);
-    import('uuid')
-      .then((uuidModule) => {
-        generateUuid = uuidModule.v4;
-        setUuidLoaded(true);
-        console.log("UUID loaded successfully");
-      })
-      .catch(err => {
-          console.error("Failed to load uuid", err);
-          toast({ title: "Error", description: "Failed to load essential components. Please refresh.", variant: "destructive"});
-      });
   }, []);
 
-  // Effect 1: Seed Admin User & Data Migration & Initial Auth Check
-   useEffect(() => {
-     if (!isClient || !generateUuid || authChecked) return; // Wait for client and uuid, run only once
-
-     let usersModified = false; // Flag to track if users array was changed
-
-     // Seed initial admin user if none exist
-     if (users.length === 0) {
-        console.log("Seeding initial admin user...");
-        const adminUser: User = {
-          id: generateUuid(),
-          username: ADMIN_USERNAME,
-          passwordHash: ADMIN_PASSWORD, // !! INSECURE !!
-          role: "superadmin",
-          permissions: MANAGEABLE_PATHS.map(p => p.path),
-        };
-        setUsers([adminUser]);
-        usersModified = true; // Mark as modified
-        console.log("Admin user seeded.");
-     } else {
-         // Ensure existing users have the permissions field (migration for older data)
-         let needsMigrationUpdate = false;
-         const migratedUsers = users.map(u => {
-             if (!u.permissions) {
-                 needsMigrationUpdate = true;
-                 return {
-                     ...u,
-                     permissions: u.role === 'superadmin'
-                         ? MANAGEABLE_PATHS.map(p => p.path)
-                         : DEFAULT_ALLOWED_PATHS,
-                 };
-             }
-             // Ensure superadmins always have full permissions after migration/load
-             if (u.role === 'superadmin' && (!u.permissions || u.permissions.length !== MANAGEABLE_PATHS.length)) {
-                 needsMigrationUpdate = true;
-                 return { ...u, permissions: MANAGEABLE_PATHS.map(p => p.path) };
-             }
-             return u;
-         });
-         if (needsMigrationUpdate) {
-             setUsers(migratedUsers);
-             usersModified = true; // Mark as modified
-             console.log("Migrated/verified existing users permissions field.");
-         }
-     }
-
-     // Set authChecked to true *after* any potential modifications
-     // This allows the next effect to run with the correct user data
-     setAuthChecked(true);
-     console.log("Auth check complete.");
-
-
-   }, [isClient, generateUuid, users, setUsers, authChecked]); // Keep dependencies, but add authChecked guard
-
-
-    // Effect 2: Check Session storage and set current user
-    useEffect(() => {
-        // Wait for client-side, uuid load, and initial auth check/seeding
-        if (!isClient || !uuidLoaded || !authChecked) {
-            return;
-        }
-
-        const loggedInUserId = sessionStorage.getItem("bizflow_currentUser");
-
-        if (loggedInUserId) {
-            const userFromStorage = users.find(u => u.id === loggedInUserId);
-            if (userFromStorage) {
-                // Only update state if the user is actually different or not set yet
-                if (!currentUser || currentUser.id !== userFromStorage.id) {
-                    // Ensure permissions are correctly set when loading from session
-                    const userWithPermissions = {
-                        ...userFromStorage,
-                        permissions: userFromStorage.permissions || (userFromStorage.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS),
-                    };
-                    console.log("Setting current user from session storage:", userWithPermissions.username);
-                    setCurrentUser(userWithPermissions);
-                }
+  // Effect 1: Initial Auth Check and Data Load
+  const fetchData = useCallback(async (userId?: string) => {
+      setIsLoading(true);
+      try {
+        // Only fetch user-specific data if a userId is provided (logged in)
+        if (userId) {
+            const [fetchedTransactions, fetchedBudgets, fetchedUsers] = await Promise.all([
+                getTransactionsAction(userId),
+                getBudgetsAction(userId),
+                currentUser?.role === 'superadmin' ? getUsersAction() : Promise.resolve([]), // Fetch all users only if superadmin
+            ]);
+            setTransactions(fetchedTransactions);
+            setBudgets(fetchedBudgets);
+            if (currentUser?.role === 'superadmin') {
+                setUsers(fetchedUsers);
             } else {
-                // User ID in session storage, but user doesn't exist in local storage anymore
-                 if (currentUser) { // Only clear state if it's currently set
-                     console.log("User ID in session storage not found in current user list. Logging out.");
-                     setCurrentUser(null); // Clear current user state
-                 }
-                sessionStorage.removeItem("bizflow_currentUser"); // Clear invalid session storage
+                setUsers([]); // Clear user list if not superadmin
             }
         } else {
-            // No user ID in session storage, ensure currentUser state is null
-            if (currentUser) {
-                console.log("No user ID in session storage. Clearing current user state.");
-                setCurrentUser(null);
+            // Clear data if no user is logged in
+            setTransactions([]);
+            setBudgets([]);
+            setUsers([]);
+        }
+      } catch (error) {
+        console.error("Failed to fetch initial data:", error);
+        toast({ title: "Error", description: "Could not load data. Please try again later.", variant: "destructive" });
+        // Clear potentially stale data on error
+        setTransactions([]);
+        setBudgets([]);
+        setUsers([]);
+      } finally {
+        setIsLoading(false);
+      }
+  }, [currentUser?.role]); // Depend on role to refetch users if role changes
+
+
+  useEffect(() => {
+    if (!isClient || authChecked) return; // Run only once after client mount
+
+    const checkAuth = async () => {
+        console.log("AppContext: Checking authentication status...");
+        const storedUserId = sessionStorage.getItem("bizflow_currentUser");
+        let user: User | null = null;
+
+        if (storedUserId) {
+            try {
+                // Instead of fetching all users, fetch just the one needed for auth check
+                // NOTE: This requires a way to get user details (including role/permissions) by ID
+                // If getUserForAuthAction only works by username, we might need another action getUserByIdAction
+                // For now, we'll rely on fetching *after* setting currentUser temporarily based on ID presence
+                console.log(`AppContext: Found user ID ${storedUserId} in session storage. Attempting to validate.`);
+                // Simulate finding user - ideally fetch user data by ID here.
+                // Assuming we need to refetch user details to be sure they still exist and get permissions
+                 const userFromAuthCheck = sessionStorage.getItem("bizflow_currentUser_details"); // Temporary workaround
+                 if (userFromAuthCheck) {
+                    user = JSON.parse(userFromAuthCheck) as User;
+                    console.log("AppContext: Successfully validated user from temporary storage:", user.username);
+                 } else {
+                     console.warn("AppContext: User ID found, but no user details in temp storage. Needs refetch/validation.");
+                     // Attempt to logout if details aren't found or validation fails
+                     sessionStorage.removeItem("bizflow_currentUser");
+                     sessionStorage.removeItem("bizflow_currentUser_details"); // Clear temp details too
+                 }
+
+            } catch (error) {
+                 console.error("AppContext: Error validating user session:", error);
+                 sessionStorage.removeItem("bizflow_currentUser");
+                 sessionStorage.removeItem("bizflow_currentUser_details");
             }
         }
 
-    // Depend on users array changes, auth status, and isClient status.
-    // currentUser is included to correctly handle external state changes (like programmatic logout).
-    }, [isClient, uuidLoaded, authChecked, users, currentUser]);
+        setCurrentUser(user); // Set user (or null)
+        setAuthChecked(true); // Mark auth check as complete
+        console.log("AppContext: Auth check complete. Current user:", user?.username ?? 'None');
+
+        // Fetch initial data based on whether a user is logged in
+        if (user) {
+            await fetchData(user.id);
+        } else {
+            setIsLoading(false); // No data to fetch, stop loading
+        }
+    };
+
+    checkAuth();
+
+  }, [isClient, authChecked, fetchData]); // Run when client ready and auth not checked
 
 
-
-    // Effect 3: Redirect Logic - Runs after auth state is potentially updated by Effect 2
+    // Effect 2: Redirect Logic - Runs after auth state is set
     useEffect(() => {
         if (!isClient || !authChecked) return; // Wait for client-side and initial auth check
 
-        const publicPaths = ['/login']; // Define public routes
+        const publicPaths = ['/login'];
         const pathIsPublic = publicPaths.includes(pathname);
+        const pathIsUsers = pathname.startsWith('/users');
+
+        console.log(`AppContext Redirect Check: Path=${pathname}, Public=${pathIsPublic}, User=${currentUser?.username}, Role=${currentUser?.role}`);
 
         if (!currentUser && !pathIsPublic) {
-            // If not logged in and trying to access a private page, redirect to login
-            console.log("Redirecting to login: Not logged in.");
+            console.log("AppContext: Redirecting to login (not logged in, private path).");
             router.push('/login');
         } else if (currentUser && pathIsPublic) {
-            // If logged in and trying to access a public page (like login), redirect to dashboard
-             console.log("Redirecting to dashboard: Logged in, accessing public page.");
+             console.log("AppContext: Redirecting to dashboard (logged in, public path).");
+            router.push('/');
+        } else if (currentUser && pathIsUsers && currentUser.role !== 'superadmin') {
+            // If logged in, trying to access /users, but not superadmin
+            console.log("AppContext: Redirecting to dashboard (accessing /users without superadmin role).");
+             toast({ title: "Access Denied", description: "You do not have permission to access the User Management page.", variant: "destructive"});
             router.push('/');
         }
-        // Role-based redirect for /users page (handled outside this effect for immediate feedback)
-        // Permission check for other pages is handled in ClientLayout
+        // Permission checks for other pages are handled in ClientLayout
 
     }, [isClient, authChecked, currentUser, pathname, router]);
 
 
   // --- Auth Functions ---
-  const login = useCallback((username: string, passwordAttempt: string): boolean => {
-    const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-
-    // !! WARNING: Comparing plaintext passwords. HIGHLY INSECURE.
-    if (user && user.passwordHash === passwordAttempt) {
-        // Ensure permissions are loaded into currentUser state
-        const userWithPermissions = {
-            ...user,
-            permissions: user.permissions || (user.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS),
-        };
-        setCurrentUser(userWithPermissions);
-        sessionStorage.setItem("bizflow_currentUser", user.id); // Simple session persistence
-        toast({ title: "Login Successful", description: `Welcome back, ${user.username}!` });
-        router.push('/'); // Redirect to dashboard after login
-        return true;
-    } else {
-        toast({ title: "Login Failed", description: "Invalid username or password.", variant: "destructive" });
-        setCurrentUser(null);
-        sessionStorage.removeItem("bizflow_currentUser");
-        return false;
+  const login = useCallback(async (username: string, passwordAttempt: string): Promise<boolean> => {
+    try {
+      const user = await getUserForAuthAction(username);
+      if (user && user.passwordHash) {
+        const isValid = await verifyPassword(passwordAttempt, user.passwordHash);
+        if (isValid) {
+          // Don't store password hash in state or session storage
+          const { passwordHash, ...userToStore } = user;
+          setCurrentUser(userToStore);
+          sessionStorage.setItem("bizflow_currentUser", user.id);
+          // Temporary workaround: Store user details needed after refresh until proper session management
+          sessionStorage.setItem("bizflow_currentUser_details", JSON.stringify(userToStore));
+          toast({ title: "Login Successful", description: `Welcome back, ${user.username}!` });
+          setAuthChecked(true); // Ensure auth is checked after successful login attempt
+          await fetchData(user.id); // Fetch data for the logged-in user
+          router.push('/'); // Redirect to dashboard
+          return true;
+        }
+      }
+      toast({ title: "Login Failed", description: "Invalid username or password.", variant: "destructive" });
+      setCurrentUser(null);
+      sessionStorage.removeItem("bizflow_currentUser");
+      sessionStorage.removeItem("bizflow_currentUser_details");
+      setAuthChecked(true); // Ensure auth is checked after failed login attempt
+      // Clear data on failed login
+      setTransactions([]);
+      setBudgets([]);
+      setUsers([]);
+      return false;
+    } catch (error) {
+      console.error("Login error:", error);
+      toast({ title: "Login Error", description: "An unexpected error occurred during login.", variant: "destructive" });
+      setCurrentUser(null);
+      sessionStorage.removeItem("bizflow_currentUser");
+      sessionStorage.removeItem("bizflow_currentUser_details");
+      setAuthChecked(true); // Ensure auth is checked after error
+        // Clear data on error
+      setTransactions([]);
+      setBudgets([]);
+      setUsers([]);
+      return false;
     }
-  }, [users, router]); // Added router dependency
+  }, [router, fetchData]);
 
   const logout = useCallback(() => {
     setCurrentUser(null);
     sessionStorage.removeItem("bizflow_currentUser");
+    sessionStorage.removeItem("bizflow_currentUser_details");
+    setTransactions([]); // Clear data
+    setBudgets([]);
+    setUsers([]);
     toast({ title: "Logged Out", description: "You have been successfully logged out." });
-    router.push('/login'); // Redirect to login page after logout
-  }, [router]); // Added router dependency
+    router.push('/login');
+  }, [router]);
 
-    // Add User (Admin Only)
-    const addUser = useCallback((data: Omit<User, 'id' | 'passwordHash' | 'permissions'> & {password: string}): boolean => {
-        if (!generateUuid) {
-             toast({ title: "Error", description: "System not ready.", variant: "destructive"});
-             return false;
+  // --- Data Mutation Functions ---
+
+    const handleAddTransaction = useCallback(async (data: Omit<Transaction, 'id' | 'date'> & {date: Date; userId: string}) => {
+         if (!currentUser) {
+             toast({ title: "Error", description: "You must be logged in.", variant: "destructive"});
+             return;
+         }
+         startTransition(async () => {
+            try {
+                // Pass the actual Date object
+                 const newTransaction = await addTransactionAction({
+                    ...data,
+                    date: data.date, // Pass the Date object directly
+                    userId: currentUser.id
+                 });
+                 setTransactions(prev => [newTransaction, ...prev].sort((a, b) => b.date.getTime() - a.date.getTime()));
+                 toast({ title: "Transaction Added", description: `${data.type === 'income' ? 'Income' : 'Expense'} recorded.` });
+            } catch (error) {
+                console.error("Failed to add transaction:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not add transaction.", variant: "destructive" });
+            }
+         });
+     }, [currentUser]);
+
+    const handleDeleteTransaction = useCallback(async (id: string) => {
+        if (!currentUser) {
+            toast({ title: "Error", description: "You must be logged in.", variant: "destructive"});
+            return;
         }
+        startTransition(async () => {
+            const originalTransactions = transactions;
+            setTransactions(prev => prev.filter(t => t.id !== id)); // Optimistic update
+            try {
+                await deleteTransactionAction(id, currentUser.id);
+                toast({ title: "Transaction Deleted", variant: "destructive" });
+            } catch (error) {
+                console.error("Failed to delete transaction:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not delete transaction.", variant: "destructive" });
+                setTransactions(originalTransactions); // Revert on error
+            }
+        });
+    }, [currentUser, transactions]);
+
+
+    const handleAddBudget = useCallback(async (data: Omit<Budget, 'id'> & {userId: string}) => {
+       if (!currentUser) {
+           toast({ title: "Error", description: "You must be logged in.", variant: "destructive"});
+           return;
+       }
+       startTransition(async () => {
+          try {
+              const upsertedBudget = await addOrUpdateBudgetAction({ ...data, userId: currentUser.id });
+              setBudgets(prevBudgets => {
+                   const index = prevBudgets.findIndex(b => b.id === upsertedBudget.id);
+                    if (index !== -1) {
+                        const updated = [...prevBudgets];
+                        updated[index] = upsertedBudget;
+                        return updated.sort((a, b) => a.category.localeCompare(b.category));
+                    } else {
+                        return [...prevBudgets, upsertedBudget].sort((a, b) => a.category.localeCompare(b.category));
+                    }
+               });
+               toast({ title: "Budget Saved", description: `Budget for ${upsertedBudget.category} saved.` });
+          } catch (error) {
+              console.error("Failed to save budget:", error);
+              toast({ title: "Error", description: error instanceof Error ? error.message : "Could not save budget.", variant: "destructive" });
+          }
+       });
+   }, [currentUser]);
+
+
+    const handleDeleteBudget = useCallback(async (id: string) => {
+       if (!currentUser) {
+           toast({ title: "Error", description: "You must be logged in.", variant: "destructive"});
+           return;
+       }
+        startTransition(async () => {
+            const originalBudgets = budgets;
+            setBudgets(prev => prev.filter(b => b.id !== id)); // Optimistic update
+            try {
+                 await deleteBudgetAction(id, currentUser.id);
+                 toast({ title: "Budget Deleted", variant: "destructive" });
+            } catch (error) {
+                console.error("Failed to delete budget:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not delete budget.", variant: "destructive" });
+                setBudgets(originalBudgets); // Revert on error
+            }
+        });
+    }, [currentUser, budgets]);
+
+    // --- User Management Functions (Superadmin only) ---
+
+    const addUser = useCallback(async (data: Omit<User, 'id' | 'passwordHash' | 'permissions'> & {password: string}): Promise<boolean> => {
         if (currentUser?.role !== 'superadmin') {
             toast({ title: "Permission Denied", description: "Only admins can add users.", variant: "destructive"});
             return false;
         }
-        if (users.some(u => u.username.toLowerCase() === data.username.toLowerCase())) {
-             toast({ title: "Error", description: "Username already exists.", variant: "destructive"});
-            return false;
-        }
+        let success = false;
+        startTransition(async () => {
+            try {
+                 const newUser = await addUserAction(data);
+                 setUsers(prev => [...prev, newUser]); // Add user without hash to local state
+                 toast({ title: "User Added", description: `User ${newUser.username} created.` });
+                 success = true;
+            } catch (error) {
+                console.error("Failed to add user:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not add user.", variant: "destructive" });
+                success = false;
+            }
+        });
+         // Note: Returning success immediately might not reflect the async operation's actual result.
+         // Consider returning the promise or using a different pattern if the caller needs to wait.
+         return success; // This might return true before the transition finishes
+    }, [currentUser]);
 
-        const newUser: User = {
-            id: generateUuid(),
-            username: data.username,
-            // !! Storing plaintext password. INSECURE. Hash properly in real app.
-            passwordHash: data.password,
-            role: data.role,
-            // Assign default permissions based on role
-            permissions: data.role === 'superadmin'
-                            ? MANAGEABLE_PATHS.map(p => p.path) // Superadmin gets all
-                            : DEFAULT_ALLOWED_PATHS, // Regular user gets defaults
-        };
-        setUsers(prevUsers => [...prevUsers, newUser]);
-        toast({ title: "User Added", description: `User ${data.username} created successfully.` });
-        return true;
-    }, [currentUser, users, setUsers, generateUuid]);
 
-    // Update User (Admin Only)
-    const updateUser = useCallback((id: string, data: UserUpdateData): boolean => {
+    const updateUser = useCallback(async (id: string, data: UserUpdateData): Promise<boolean> => {
         if (currentUser?.role !== 'superadmin') {
             toast({ title: "Permission Denied", description: "Only admins can update users.", variant: "destructive"});
             return false;
         }
+        let success = false;
+         startTransition(async () => {
+             const originalUsers = [...users]; // Clone for potential revert
+            // Optimistic update (without password hash)
+             let updatedUserOptimistic: User | undefined;
+             setUsers(prev => {
+                const index = prev.findIndex(u => u.id === id);
+                if (index === -1) return prev;
+                const updated = [...prev];
+                 // Create the optimistic update object carefully, avoid modifying passwordHash
+                updatedUserOptimistic = {
+                   ...updated[index],
+                   username: data.username ?? updated[index].username,
+                   role: data.role ?? updated[index].role,
+                   // If role changed, optimistically update permissions too
+                   permissions: (data.role && data.role !== updated[index].role)
+                    ? (data.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS)
+                    : updated[index].permissions,
+                };
+                updated[index] = updatedUserOptimistic;
+                return updated;
+             });
 
-        let userToUpdate: User | undefined;
-        let updatedUsersList: User[] = [];
-
-        setUsers(prevUsers => {
-            const userIndex = prevUsers.findIndex(u => u.id === id);
-            if (userIndex === -1) {
-                toast({ title: "Error", description: "User not found.", variant: "destructive"});
-                return prevUsers; // Return previous state if user not found
-            }
-
-            userToUpdate = prevUsers[userIndex];
-
-            // Check for username conflict if username is being changed
-            if (data.username && data.username !== userToUpdate.username && prevUsers.some(u => u.username.toLowerCase() === data.username?.toLowerCase() && u.id !== id)) {
-                toast({ title: "Error", description: "Username already exists.", variant: "destructive"});
-                return prevUsers; // Return previous state if username conflict
-            }
-
-
-            // Determine new permissions if role changes
-            let newPermissions = userToUpdate.permissions;
-            if (data.role && data.role !== userToUpdate.role) {
-                newPermissions = data.role === 'superadmin'
-                                    ? MANAGEABLE_PATHS.map(p => p.path)
-                                    : DEFAULT_ALLOWED_PATHS; // Reset permissions on role change
-            }
-
-            updatedUsersList = [...prevUsers];
-            updatedUsersList[userIndex] = {
-                ...userToUpdate,
-                username: data.username ?? userToUpdate.username,
-                role: data.role ?? userToUpdate.role,
-                // Update passwordHash only if a new password is provided
-                passwordHash: data.password ? data.password : userToUpdate.passwordHash, // !! INSECURE !!
-                permissions: newPermissions, // Update permissions if role changed
-            };
-
-             return updatedUsersList;
-        });
-
-        // Update currentUser state outside of setUsers if the current user was the one updated
-        if (userToUpdate && currentUser?.id === id) {
-            const updatedCurrentUser = updatedUsersList.find(u => u.id === id);
-            if(updatedCurrentUser) {
-                setCurrentUser(updatedCurrentUser);
-            }
-        }
-
-
-        toast({ title: "User Updated", description: `User ${data.username ?? userToUpdate?.username} updated successfully.` });
-        return true;
-    }, [currentUser, setUsers]); // Removed 'users' dependency here as we use the prevUsers in setUsers
-
-     // Delete User (Admin Only)
-     const deleteUser = useCallback((id: string): boolean => {
-         if (currentUser?.role !== 'superadmin') {
-             toast({ title: "Permission Denied", description: "Only admins can delete users.", variant: "destructive" });
-             return false;
-         }
-
-         const userToDelete = users.find(u => u.id === id);
-
-         if (!userToDelete) {
-              toast({ title: "Error", description: "User not found.", variant: "destructive"});
-              return false;
-         }
-
-         // Prevent deleting self (redundant with UI check, but good safeguard)
-         if (userToDelete.id === currentUser.id) {
-              toast({ title: "Error", description: "Cannot delete your own account.", variant: "destructive"});
-              return false;
-         }
-
-         // Prevent deleting the last superadmin
-          if (userToDelete.role === 'superadmin') {
-              const superadminCount = users.filter(u => u.role === 'superadmin').length;
-              if (superadminCount <= 1) {
-                  toast({ title: "Action Prohibited", description: "Cannot delete the last superadmin.", variant: "destructive"});
-                  return false;
-              }
-          }
-
-
-         setUsers(prevUsers => prevUsers.filter(user => user.id !== id));
-         toast({ title: "User Deleted", description: `User ${userToDelete.username} has been deleted.`, variant: "destructive" });
-         return true;
-     }, [currentUser, users, setUsers]);
-
-     // Update User Permissions (Admin Only)
-     const updateUserPermissions = useCallback((userId: string, permissions: string[]): boolean => {
-         if (currentUser?.role !== 'superadmin') {
-             toast({ title: "Permission Denied", description: "Only admins can change permissions.", variant: "destructive" });
-             return false;
-         }
-
-          let updatedUser: User | undefined;
-          let finalUsersList: User[] = [];
-
-
-         setUsers(prevUsers => {
-            const userIndex = prevUsers.findIndex(u => u.id === userId);
-            if (userIndex === -1) {
-                toast({ title: "Error", description: "User not found.", variant: "destructive" });
-                return prevUsers;
-            }
-
-             const userToUpdate = prevUsers[userIndex];
-
-             // Ensure dashboard is always included for non-admins
-             let finalPermissions = [...permissions];
-             if (userToUpdate.role !== 'superadmin' && !finalPermissions.includes('/')) {
-                 finalPermissions.push('/');
+             try {
+                 await updateUserAction(id, data);
+                 toast({ title: "User Updated", description: `User ${data.username ?? updatedUserOptimistic?.username} updated.` });
+                 // If the current user was updated, refresh their state
+                 if (currentUser?.id === id) {
+                     const updatedCurrentUser = users.find(u => u.id === id); // Get updated data
+                     if (updatedCurrentUser) setCurrentUser(updatedCurrentUser);
+                     // Optionally refetch all data if permissions/role changed significantly
+                     // await fetchData(currentUser.id);
+                 }
+                  success = true;
+             } catch (error) {
+                 console.error("Failed to update user:", error);
+                 toast({ title: "Error", description: error instanceof Error ? error.message : "Could not update user.", variant: "destructive" });
+                 setUsers(originalUsers); // Revert optimistic update
+                 success = false;
              }
-             // Superadmins always have all permissions, don't allow modification via this function directly
-             if (userToUpdate.role === 'superadmin') {
-                 finalPermissions = MANAGEABLE_PATHS.map(p => p.path);
-             }
-
-             finalUsersList = [...prevUsers];
-              updatedUser = {
-                 ...userToUpdate,
-                 permissions: finalPermissions,
-             };
-             finalUsersList[userIndex] = updatedUser;
-
-
-             return finalUsersList;
          });
-
-          // If the updated user is the current user, update currentUser state
-          if (updatedUser && currentUser?.id === userId) {
-             setCurrentUser(updatedUser);
-          }
+         return success; // May return before async completes
+    }, [currentUser, users]); // Include users for optimistic update revert
 
 
-         toast({ title: "Permissions Updated", description: `Permissions for ${updatedUser?.username} updated successfully.` });
-         return true;
-     }, [currentUser, setUsers]); // Removed 'users' dependency
-
-
-  // --- Transaction and Budget Functions ---
-  const handleAddTransaction = useCallback((data: Omit<Transaction, 'id'>) => {
-    if (!generateUuid) {
-      console.error("UUID generation function not loaded");
-      toast({ title: "Error", description: "Could not add transaction. Please try again.", variant: "destructive"});
-      return;
-    }
-    const newTransaction: Transaction = {
-      ...data,
-      id: generateUuid(),
-      date: new Date(data.date),
-    };
-    setTransactions(prevTransactions =>
-      [...prevTransactions, newTransaction].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    );
-    toast({
-      title: "Transaction Added",
-      description: `${data.type === 'income' ? 'Income' : 'Expense'} of ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })} recorded.`,
-    });
-  }, [setTransactions]);
-
-  const handleDeleteTransaction = useCallback((id: string) => {
-    const transactionToDelete = transactions.find(t => t.id === id);
-    setTransactions(transactions.filter((t) => t.id !== id));
-    if (transactionToDelete) {
-       toast({
-         title: "Transaction Deleted",
-         description: `Transaction "${transactionToDelete.description}" removed.`,
-         variant: "destructive",
-       });
-    }
-  }, [transactions, setTransactions]);
-
- const handleAddBudget = useCallback((data: Omit<Budget, 'id'>) => {
-     if (!generateUuid) {
-       console.error("UUID generation function not loaded");
-       toast({ title: "Error", description: "Could not save budget. Please try again.", variant: "destructive"});
-       return;
-     }
-     const dataCategoryLower = data.category.toLowerCase();
-
-
-     setBudgets(prevBudgets => {
-        const existingBudgetIndex = prevBudgets.findIndex(b =>
-            b.category.toLowerCase() === dataCategoryLower && b.period === data.period
-          );
-
-        if (existingBudgetIndex !== -1) {
-            const updatedBudgets = [...prevBudgets];
-            updatedBudgets[existingBudgetIndex] = {
-                 ...prevBudgets[existingBudgetIndex],
-                 amount: data.amount,
-                 category: data.category // Update category casing too
-            };
-            toast({
-                title: "Budget Updated",
-                description: `Budget for ${data.category} (${data.period}) updated to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
-              });
-            return updatedBudgets.sort((a, b) => a.category.localeCompare(b.category));
-        } else {
-            const newBudget: Budget = {
-              ...data,
-              id: generateUuid!(),
-            };
-             toast({
-                 title: "Budget Added",
-                 description: `Budget for ${data.category} (${data.period}) set to ${data.amount.toLocaleString("id-ID", { style: "currency", currency: "IDR" })}.`,
-               });
-            return [...prevBudgets, newBudget].sort((a, b) => a.category.localeCompare(b.category));
+    const deleteUser = useCallback(async (id: string): Promise<boolean> => {
+        if (!currentUser || currentUser.role !== 'superadmin') {
+            toast({ title: "Permission Denied", description: "Only admins can delete users.", variant: "destructive"});
+            return false;
         }
-     });
-   }, [setBudgets, generateUuid]); // Removed budgets dependency
-
-
-  const handleDeleteBudget = useCallback((id: string) => {
-    const budgetToDelete = budgets.find(b => b.id === id);
-    setBudgets(budgets.filter((b) => b.id !== id));
-     if (budgetToDelete) {
-        toast({
-            title: "Budget Deleted",
-            description: `Budget for ${budgetToDelete.category} (${budgetToDelete.period}) removed.`,
-            variant: "destructive",
+        if (id === currentUser.id) {
+             toast({ title: "Error", description: "Cannot delete your own account.", variant: "destructive"});
+             return false;
+        }
+        let success = false;
+        startTransition(async () => {
+            const originalUsers = users;
+            const userToDelete = users.find(u => u.id === id);
+            setUsers(prev => prev.filter(u => u.id !== id)); // Optimistic update
+            try {
+                 await deleteUserAction(id, currentUser.id);
+                 toast({ title: "User Deleted", description: `User ${userToDelete?.username} deleted.`, variant: "destructive" });
+                 success = true;
+            } catch (error) {
+                console.error("Failed to delete user:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not delete user.", variant: "destructive" });
+                setUsers(originalUsers); // Revert on error
+                success = false;
+            }
         });
-    }
-  }, [budgets, setBudgets]);
+         return success; // May return before async completes
+    }, [currentUser, users]);
+
+
+    const updateUserPermissions = useCallback(async (userId: string, permissions: string[]): Promise<boolean> => {
+         if (!currentUser || currentUser.role !== 'superadmin') {
+            toast({ title: "Permission Denied", description: "Only admins can change permissions.", variant: "destructive"});
+            return false;
+        }
+        let success = false;
+        startTransition(async () => {
+            const originalUsers = [...users];
+             // Optimistic Update
+             let updatedUserOptimistic: User | undefined;
+             setUsers(prev => {
+                const index = prev.findIndex(u => u.id === userId);
+                if (index === -1) return prev;
+                const updated = [...prev];
+                 updatedUserOptimistic = { ...updated[index], permissions };
+                 updated[index] = updatedUserOptimistic;
+                return updated;
+             });
+
+            try {
+                 await updateUserPermissionsAction(userId, permissions);
+                 toast({ title: "Permissions Updated", description: `Permissions for user updated.` });
+                  // Update current user state if they were the one modified
+                 if (currentUser?.id === userId && updatedUserOptimistic) {
+                     setCurrentUser(updatedUserOptimistic);
+                 }
+                 success = true;
+            } catch (error) {
+                console.error("Failed to update permissions:", error);
+                toast({ title: "Error", description: error instanceof Error ? error.message : "Could not update permissions.", variant: "destructive" });
+                setUsers(originalUsers); // Revert optimistic update
+                success = false;
+            }
+        });
+        return success; // May return before async completes
+    }, [currentUser, users]); // Added users dependency
+
 
   const value = {
     transactions,
     budgets,
-    users, // Expose users
-    currentUser, // Expose current user
-    login, // Expose login
-    logout, // Expose logout
-    addUser, // Expose addUser
-    updateUser, // Expose updateUser
-    deleteUser, // Expose deleteUser
-    updateUserPermissions, // Expose permission update function
+    users,
+    currentUser,
+    isLoading: isLoading || isPending, // Combine initial load and mutation pending state
+    isMutating: isPending,
+    login,
+    logout,
+    addUser,
+    updateUser,
+    deleteUser,
+    updateUserPermissions,
     handleAddTransaction,
     handleDeleteTransaction,
     handleAddBudget,
     handleDeleteBudget,
     isClient,
-    uuidLoaded,
-    authChecked, // Expose authChecked status
+    authChecked,
+    fetchData: () => fetchData(currentUser?.id), // Function to allow manual refetch
   };
 
-  // Render children only after initial auth check is complete
-  // or if on a public path (like login)
-  const publicPaths = ['/login']; // Define public routes
-  const showContent = authChecked || publicPaths.includes(pathname);
-
-
+  // Show loading indicator or children
   return (
     <AppContext.Provider value={value}>
-      {/* Render based on client readiness AND auth check */}
-       {isClient && showContent ? children : null /* Optionally show a loading spinner here */}
+       {isClient ? children : null /* Or a global spinner */}
     </AppContext.Provider>
   );
 };
@@ -527,6 +497,3 @@ export const useAppContext = (): AppContextProps => {
   }
   return context;
 };
-
-
-    

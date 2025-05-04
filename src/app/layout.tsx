@@ -4,6 +4,7 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 import { AppProvider } from '@/context/AppContext'; // Import AppProvider
 import ClientLayout from '@/components/ClientLayout'; // Import ClientLayout
+import * as React from 'react'; // Import React
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -25,12 +26,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // ClientLayout and AppProvider handle client-side logic,
+  // so they don't need explicit isClient checks here usually.
+  // However, wrapping helps ensure nothing attempts server-only operations improperly.
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {/* Wrap the client layout and children with AppProvider */}
         <AppProvider>
-          {/* Use ClientLayout to handle sidebar and main content structure */}
+          {/* ClientLayout now handles conditional rendering based on auth */}
           <ClientLayout>{children}</ClientLayout>
         </AppProvider>
         <Toaster />

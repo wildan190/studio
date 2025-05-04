@@ -14,11 +14,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Transaction } from "@/types";
-import { PaginationControls } from "@/components/ui/pagination-controls"; // Import pagination controls
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 interface TransactionListProps {
   transactions: Transaction[];
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void> | void; // Update signature
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
@@ -35,16 +36,22 @@ export function TransactionList({
     itemsPerPage,
     totalItems
  }: TransactionListProps) {
+    const { isMutating } = useAppContext(); // Get mutation state
 
-  if (!transactions.length && totalItems === 0) { // Check if there are no transactions *at all*
+    const handleDeleteClick = async (id: string) => {
+        // Toast is handled by the page/action now
+        await onDelete(id);
+    }
+
+  if (!transactions.length && totalItems === 0) {
     return <p className="text-muted-foreground text-center p-4">No transactions yet.</p>;
   }
 
   return (
-     <div className="flex flex-col h-full"> {/* Ensure container takes height */}
-        <ScrollArea className="flex-grow rounded-md border"> {/* Use flex-grow to take available space */}
+     <div className="flex flex-col h-full">
+        <ScrollArea className="flex-grow rounded-md border">
             <Table>
-            <TableHeader className="sticky top-0 bg-secondary z-10">{/* Ensure no whitespace */}
+            <TableHeader className="sticky top-0 bg-secondary z-10">
                 <TableRow>
                 <TableHead>Type</TableHead>
                 <TableHead>Description</TableHead>
@@ -68,7 +75,7 @@ export function TransactionList({
                             <TableCell>{format(transaction.date, "PPP")}</TableCell>
                             <TableCell
                             className={`text-right font-semibold ${
-                                transaction.type === "income" ? "text-[hsl(var(--chart-1))]" : "text-destructive" // Adjusted colors to match theme
+                                transaction.type === "income" ? "text-[hsl(var(--chart-1))]" : "text-destructive"
                             }`}
                             >
                             {transaction.type === "income" ? "+" : "-"}
@@ -78,9 +85,10 @@ export function TransactionList({
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => onDelete(transaction.id)}
+                                onClick={() => handleDeleteClick(transaction.id)}
                                 aria-label="Delete transaction"
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10" // Added destructive styling
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                disabled={isMutating} // Disable during mutation
                             >
                                 <Trash2 className="h-4 w-4" />
                             </Button>

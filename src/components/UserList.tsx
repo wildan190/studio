@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Trash2, Edit, ShieldCheck } from "lucide-react"; // Added ShieldCheck icon
+import { Trash2, Edit, ShieldCheck } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -25,16 +25,17 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { User } from "@/types";
-import { UserPermissionsDialog } from "./UserPermissionsDialog"; // Import the new dialog
-import { PaginationControls } from "@/components/ui/pagination-controls"; // Import pagination controls
+import { UserPermissionsDialog } from "./UserPermissionsDialog";
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 
 interface UserListProps {
   users: User[];
-  currentUser: User | null; // Pass current user for comparison
-  onDelete: (id: string) => void;
-  onEdit: (user: User) => void; // Make onEdit mandatory for this component
-  onUpdatePermissions: (userId: string, permissions: string[]) => void; // Callback for updating permissions
+  currentUser: User | null;
+  onDelete: (id: string) => Promise<void> | void; // Update signatures
+  onEdit: (user: User) => void; // No change needed here, it's synchronous
+  onUpdatePermissions: (userId: string, permissions: string[]) => Promise<void> | void; // Update signature
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
@@ -54,23 +55,14 @@ export function UserList({
     itemsPerPage,
     totalItems
 }: UserListProps) {
+  const { isMutating } = useAppContext(); // Get mutation state
   const [selectedUserForPermissions, setSelectedUserForPermissions] = React.useState<User | null>(null);
 
+  // Client-side check to disable delete button for self
   const canDeleteUser = (userToDelete: User): boolean => {
-     if (!currentUser) return false; // Should not happen if viewing the page, but safety check
-     if (userToDelete.id === currentUser.id) return false; // Cannot delete self
-
-     // Prevent deleting the last superadmin
-     if (userToDelete.role === 'superadmin') {
-          // Need to check total number of superadmins from the full list, not just paginated
-          // This info isn't available here, ideally passed down or fetched if needed
-          // For now, assume this check is handled correctly in the delete handler in the page component
-          // const superadminCount = users.filter(u => u.role === 'superadmin').length; // This only checks current page
-         // if (superadminCount <= 1) {
-         //     return false;
-         // }
-     }
-     return true; // Otherwise, can delete (assuming page-level check handles last superadmin)
+     if (!currentUser) return false;
+     return userToDelete.id !== currentUser.id; // Cannot delete self
+     // Server action handles the "last superadmin" check
   };
 
   const handleOpenPermissionsDialog = (user: User) => {
@@ -81,10 +73,17 @@ export function UserList({
     setSelectedUserForPermissions(null);
   };
 
-  const handleSavePermissions = (userId: string, permissions: string[]) => {
-      onUpdatePermissions(userId, permissions);
-      handleClosePermissionsDialog(); // Close dialog after saving
+  const handleSavePermissions = async (userId: string, permissions: string[]) => {
+      // Toast is handled by the page/action now
+      await onUpdatePermissions(userId, permissions);
+      handleClosePermissionsDialog();
   };
+
+   const handleDeleteClick = async (id: string, username: string) => {
+     // Toast is handled by the page/action now
+     await onDelete(id);
+   }
+
 
   if (!users.length && totalItems === 0) {
      return <p className="text-muted-foreground text-center p-4">No users found.</p>;
@@ -93,10 +92,10 @@ export function UserList({
 
   return (
     <>
-       <div className="flex flex-col h-full"> {/* Ensure container takes height */}
-            <ScrollArea className="flex-grow rounded-md border"> {/* Use flex-grow */}
+       <div className="flex flex-col h-full">
+            <ScrollArea className="flex-grow rounded-md border">
             <Table>
-                <TableHeader className="sticky top-0 bg-secondary z-10">{/* Ensure no whitespace */}
+                <TableHeader className="sticky top-0 bg-secondary z-10">
                 <TableRow>
                     <TableHead>Username</TableHead>
                     <TableHead>Role</TableHead>
@@ -107,7 +106,7 @@ export function UserList({
                  {users.length > 0 ? (
                     users.map((user) => {
                         const isCurrentUser = currentUser?.id === user.id;
-                        const disableDelete = !canDeleteUser(user);
+                        const disableDelete = !canDeleteUser(user) || isMutating; // Also disable during mutation
                         const isSuperAdmin = user.role === 'superadmin';
 
                         return (
@@ -125,6 +124,7 @@ export function UserList({
                                     onClick={() => onEdit(user)}
                                     aria-label="Edit user"
                                     title="Edit User Details"
+                                    disabled={isMutating} // Disable during mutation
                                 >
                                     <Edit className="h-4 w-4" />
                                 </Button>
@@ -134,7 +134,7 @@ export function UserList({
                                     onClick={() => handleOpenPermissionsDialog(user)}
                                     aria-label="Manage permissions"
                                     title="Manage Permissions"
-                                    disabled={isSuperAdmin} // Disable for superadmins as they have all permissions
+                                    disabled={isSuperAdmin || isMutating} // Disable for superadmins or during mutation
                                     className="text-primary hover:text-primary hover:bg-primary/10 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     <ShieldCheck className="h-4 w-4" />
@@ -148,7 +148,7 @@ export function UserList({
                                             aria-label="Delete user"
                                             title="Delete User"
                                             className="text-destructive hover:text-destructive hover:bg-destructive/10 disabled:opacity-50 disabled:cursor-not-allowed"
-                                            disabled={disableDelete} // Disable button based on logic
+                                            disabled={disableDelete}
                                         >
                                             <Trash2 className="h-4 w-4" />
                                         </Button>
@@ -157,16 +157,17 @@ export function UserList({
                                         <AlertDialogHeader>
                                         <AlertDialogTitle>Are you sure?</AlertDialogTitle>
                                         <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the user <span className="font-semibold">{user.username}</span>.
+                                            This action cannot be undone. This will permanently delete the user <span className="font-semibold">{user.username}</span>. Associated budgets and transactions will also be deleted (if cascade is set up in DB).
                                         </AlertDialogDescription>
                                         </AlertDialogHeader>
                                         <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogCancel disabled={isMutating}>Cancel</AlertDialogCancel>
                                         <AlertDialogAction
-                                            onClick={() => onDelete(user.id)}
+                                            onClick={() => handleDeleteClick(user.id, user.username)}
                                             className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                             disabled={isMutating} // Disable during mutation
                                             >
-                                            Delete
+                                            {isMutating ? 'Deleting...' : 'Delete'}
                                         </AlertDialogAction>
                                         </AlertDialogFooter>
                                     </AlertDialogContent>
@@ -202,7 +203,7 @@ export function UserList({
                 user={selectedUserForPermissions}
                 isOpen={!!selectedUserForPermissions}
                 onClose={handleClosePermissionsDialog}
-                onSave={handleSavePermissions}
+                onSave={handleSavePermissions} // Pass the async handler
             />
         )}
     </>

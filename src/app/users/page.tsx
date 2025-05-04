@@ -1,54 +1,65 @@
 "use client";
 
 import * as React from "react";
-import { useState } from "react"; // Import useState
+import { useState, useEffect } from "react";
 import { useAppContext } from '@/context/AppContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
-import { PlusCircle } from "lucide-react";
-// Import user form and list components
 import { UserForm } from "@/components/UserForm";
 import { UserList } from "@/components/UserList";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import type { User } from "@/types"; // Import User type
-import { ITEMS_PER_PAGE } from "@/lib/constants"; // Import items per page constant
+import type { User } from "@/types";
+import { ITEMS_PER_PAGE } from "@/lib/constants";
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 export default function UsersPage() {
-  const { currentUser, users, isClient, authChecked, addUser, deleteUser, updateUser, updateUserPermissions } = useAppContext(); // Add updateUserPermissions
-  const [editingUser, setEditingUser] = useState<User | null>(null); // State for user being edited
+  const {
+      currentUser,
+      users,
+      addUser,
+      deleteUser,
+      updateUser,
+      updateUserPermissions,
+      isLoading, // Use loading state from context
+      isMutating, // Use mutating state from context
+      isClient,
+      authChecked,
+      fetchData, // Get fetchData to refresh user list if needed
+    } = useAppContext();
+
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = React.useState(1);
 
-    // Calculate total pages
-  const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
-
-    // Get users for the current page
-  const paginatedUsers = users.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE
-  );
+   // Recalculate pagination based on users from context
+   const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
+   const paginatedUsers = users.slice(
+     (currentPage - 1) * ITEMS_PER_PAGE,
+     currentPage * ITEMS_PER_PAGE
+   );
 
     const handlePageChange = (page: number) => {
         setCurrentPage(page);
     };
 
+   // --- Permissions Check & Loading State ---
+    // Combine loading state and auth check
+    if (isLoading || !isClient || !authChecked) {
+      return (
+        <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+          <Skeleton className="h-8 w-48 mb-4" />
+          <Separator />
+          <Skeleton className="h-32 w-full rounded-lg mb-6" /> {/* Security Warning Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <Skeleton className="h-[300px] w-full rounded-lg" /> {/* Form Skeleton */}
+             <Skeleton className="h-[400px] w-full rounded-lg" /> {/* List Skeleton */}
+          </div>
+            <div className="text-center text-muted-foreground text-sm mt-4">Loading User Management...</div>
+        </div>
+      );
+    }
 
-  if (!isClient || !authChecked) {
-    return (
-       <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
-            <div className="h-10 w-48 bg-muted rounded-lg animate-pulse mb-4"></div>
-            <Separator />
-            {/* Moved Security Warning Skeleton Here */}
-            <div className="h-32 bg-muted rounded-lg animate-pulse mb-6"></div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="h-72 bg-muted rounded-lg animate-pulse"></div> {/* Form Skeleton */}
-                <div className="h-[400px] bg-muted rounded-lg animate-pulse"></div> {/* List Skeleton */}
-            </div>
-       </div>
-    );
-  }
-
-  if (currentUser?.role !== 'superadmin') {
+    // Check role after loading and auth check are complete
+    if (currentUser?.role !== 'superadmin') {
     return (
        <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
             <Card className="shadow-md rounded-lg border-destructive">
@@ -61,58 +72,56 @@ export default function UsersPage() {
             </Card>
        </div>
     );
-  }
+    }
 
-    // Handlers
-    const handleAddUser = (data: any) => {
-        const success = addUser({ username: data.username, password: data.password, role: data.role });
+
+    // --- Handlers ---
+    const handleAddUser = async (data: any) => {
+       const success = await addUser({ username: data.username, password: data.password, role: data.role });
         if (success) {
-            setEditingUser(null); // Clear editing state after adding
+            setEditingUser(null); // Clear editing state after successful add
+            // Optionally refetch users if the list isn't automatically updated by the context state change
+            // await fetchData(); // Or rely on context state update
         }
     };
 
-    const handleUpdateUser = (data: any) => {
+    const handleUpdateUser = async (data: any) => {
         if (!editingUser) return;
-        const success = updateUser(editingUser.id, {
+        const success = await updateUser(editingUser.id, {
              username: data.username,
              role: data.role,
-             ...(data.password && { password: data.password }) // Only include password if provided
+             ...(data.password && { password: data.password })
          });
         if (success) {
             setEditingUser(null); // Clear editing state on success
+             // Optionally refetch users if the list isn't automatically updated by the context state change
+            // await fetchData(); // Or rely on context state update
         }
     };
 
-    const handleDeleteUser = (id: string) => {
-        // Prevent deleting self if last superadmin
-        const userToDelete = users.find(u => u.id === id);
-         if (userToDelete && userToDelete.id === currentUser.id && userToDelete.role === 'superadmin') {
-             const superadminCount = users.filter(u => u.role === 'superadmin').length;
-             if (superadminCount <= 1) {
-                  // Show alert dialog instead of toast for critical action
-                  // This requires adding state for an alert dialog, or handling it within the AlertDialogTrigger in UserList
-                  alert("Cannot delete the last superadmin."); // Simple alert for now
-                  return;
-             }
-         }
-        deleteUser(id);
-         if (editingUser?.id === id) {
+    const handleDeleteUser = async (id: string) => {
+         // The core logic (preventing last admin delete) is now in the server action
+        const success = await deleteUser(id);
+         if (success && editingUser?.id === id) {
              setEditingUser(null); // Clear edit form if the edited user is deleted
          }
+          // Optionally refetch users if the list isn't automatically updated by the context state change
+         // if (success) await fetchData(); // Or rely on context state update
     };
 
     const handleEditUser = (user: User) => {
         setEditingUser(user);
-         window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to top to see the form
+         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleCancelEdit = () => {
         setEditingUser(null);
     };
 
-    // Renamed to avoid conflict, pass directly to UserList
-    const handleUpdatePermissions = (userId: string, permissions: string[]) => {
-        updateUserPermissions(userId, permissions);
+    const handleUpdatePermissions = async (userId: string, permissions: string[]) => {
+        await updateUserPermissions(userId, permissions);
+         // Optionally refetch users if the list isn't automatically updated by the context state change
+        // await fetchData(); // Or rely on context state update
     };
 
 
@@ -121,21 +130,22 @@ export default function UsersPage() {
         <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
+             {isMutating && ( // Optional: Show a subtle indicator during mutations
+                 <div className="text-sm text-muted-foreground italic">Processing...</div>
+             )}
           </div>
           <Separator />
 
-            {/* Security Warning Moved to Top */}
             <Card className="shadow-md rounded-lg border-destructive bg-destructive/5 mb-6">
                 <CardHeader>
                 <CardTitle className="text-destructive">Security Warning</CardTitle>
                 <CardDescription className="text-destructive/90">
-                    <strong>Important:</strong> This user management system uses local storage and handles passwords insecurely for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing. Permissions are also enforced client-side, which is insecure.
+                    <strong>Important:</strong> Password handling in this demonstration uses secure hashing (bcrypt) via server actions, which is a significant improvement. However, ensure your database connection and environment variables are properly secured in production. Permissions are enforced via server actions where appropriate.
                 </CardDescription>
                 </CardHeader>
              </Card>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-             {/* Column 1: Add/Edit User Form */}
              <div className="md:col-span-1 space-y-6">
                  <Card className="shadow-md rounded-lg">
                     <CardHeader>
@@ -152,25 +162,23 @@ export default function UsersPage() {
                  </Card>
              </div>
 
-             {/* Column 2: User List */}
              <div className="md:col-span-1">
-                <Card className="shadow-md rounded-lg flex flex-col"> {/* Added flex flex-col */}
+                <Card className="shadow-md rounded-lg flex flex-col">
                     <CardHeader>
                     <CardTitle>Current Users</CardTitle>
                     <CardDescription>List of all registered users and their roles. Edit, delete, or manage permissions.</CardDescription>
                     </CardHeader>
-                     {/* Removed CardContent wrapping UserList */}
                         <UserList
-                            users={paginatedUsers} // Use paginated users
+                            users={paginatedUsers}
                             onDelete={handleDeleteUser}
                             onEdit={handleEditUser}
                             currentUser={currentUser}
-                            onUpdatePermissions={handleUpdatePermissions} // Pass handler
+                            onUpdatePermissions={handleUpdatePermissions}
                             currentPage={currentPage}
                             totalPages={totalPages}
                             onPageChange={handlePageChange}
                             itemsPerPage={ITEMS_PER_PAGE}
-                            totalItems={users.length} // Use total users length
+                            totalItems={users.length}
                          />
                  </Card>
              </div>

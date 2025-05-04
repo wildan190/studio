@@ -1,25 +1,24 @@
 "use client";
 
 import * as React from "react";
-import { useAppContext } from '@/context/AppContext'; // Import useAppContext
+import { useAppContext } from '@/context/AppContext';
 import { ExpenseReport } from "@/components/ExpenseReport";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 export default function ReportsPage() {
-  const { transactions, budgets, isClient, uuidLoaded, authChecked } = useAppContext(); // Get state from context, including authChecked
+  const { transactions, budgets, isLoading, isClient, authChecked } = useAppContext();
 
-    // Updated Loading State: Wait for client, uuid, and auth check
-    if (!isClient || !uuidLoaded || !authChecked) {
+    // Use the isLoading state from AppContext
+    if (isLoading || !isClient || !authChecked) {
     return (
-      <div className="flex flex-1 flex-col p-4 md:p-6">
+      <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+         <Skeleton className="h-8 w-48 mb-4" />
         <div className="space-y-6">
-          <div className="h-10 w-48 bg-muted rounded-lg animate-pulse"></div>
-          <div className="h-[500px] bg-muted rounded-lg animate-pulse"></div> {/* Taller skeleton for report */}
+          <Skeleton className="h-[500px] w-full rounded-lg" /> {/* Taller skeleton for report */}
         </div>
-        <footer className="mt-12 text-center text-muted-foreground text-sm">
-            <Separator className="my-4" />
-             Loading Reports...
-        </footer>
+        <Separator className="my-6" />
+        <div className="text-center text-muted-foreground text-sm">Loading Reports...</div>
       </div>
     );
   }

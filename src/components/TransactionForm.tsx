@@ -32,6 +32,7 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import type { Transaction, TransactionType } from "@/types";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 const formSchema = z.object({
   type: z.enum(["income", "expense"]),
@@ -43,10 +44,12 @@ const formSchema = z.object({
 type TransactionFormValues = z.infer<typeof formSchema>;
 
 interface TransactionFormProps {
-  onSubmit: (data: Omit<Transaction, 'id'>) => void;
+   // onSubmit expects the raw form data. Page component adds userId.
+  onSubmit: (data: TransactionFormValues) => Promise<void> | void;
 }
 
 export function TransactionForm({ onSubmit }: TransactionFormProps) {
+   const { isMutating } = useAppContext(); // Get mutation state
   const form = useForm<TransactionFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -57,9 +60,11 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
     },
   });
 
-  const handleSubmit = (values: TransactionFormValues) => {
-    onSubmit(values);
-    form.reset(); // Reset form after successful submission
+  const handleSubmit = async (values: TransactionFormValues) => {
+     // No need to add userId here, the page component handles it
+     await onSubmit(values);
+     // Toast is handled by the page component/action now
+    form.reset();
   };
 
   return (
@@ -71,7 +76,7 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select onValueChange={field.onChange} defaultValue={field.value} disabled={isMutating}>
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select transaction type" />
@@ -102,7 +107,11 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
             <FormItem>
               <FormLabel>Description / Category</FormLabel>
               <FormControl>
-                <Input placeholder={form.watch('type') === 'income' ? "Source (e.g., Sales, Services)" : "Category (e.g., Rent, Supplies)"} {...field} />
+                <Input
+                  placeholder={form.watch('type') === 'income' ? "Source (e.g., Sales, Services)" : "Category (e.g., Rent, Supplies)"}
+                  {...field}
+                  disabled={isMutating}
+                 />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -116,7 +125,7 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
             <FormItem>
               <FormLabel>Amount</FormLabel>
               <FormControl>
-                <Input type="number" step="0.01" placeholder="0.00" {...field} />
+                <Input type="number" step="0.01" placeholder="0.00" {...field} disabled={isMutating}/>
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -138,6 +147,7 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
                         "w-full pl-3 text-left font-normal",
                         !field.value && "text-muted-foreground"
                       )}
+                       disabled={isMutating}
                     >
                       {field.value ? (
                         format(field.value, "PPP")
@@ -154,7 +164,7 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
                     selected={field.value}
                     onSelect={field.onChange}
                     disabled={(date) =>
-                      date > new Date() || date < new Date("1900-01-01")
+                      date > new Date() || date < new Date("1900-01-01") || isMutating
                     }
                     initialFocus
                   />
@@ -164,7 +174,9 @@ export function TransactionForm({ onSubmit }: TransactionFormProps) {
             </FormItem>
           )}
         />
-        <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground">Add Transaction</Button>
+         <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isMutating}>
+            {isMutating ? 'Adding...' : 'Add Transaction'}
+        </Button>
       </form>
     </Form>
   );

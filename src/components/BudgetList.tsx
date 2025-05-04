@@ -25,14 +25,12 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import type { Budget } from "@/types";
-import { toast } from "@/hooks/use-toast";
-import { PaginationControls } from "@/components/ui/pagination-controls"; // Import pagination controls
-
+import { PaginationControls } from "@/components/ui/pagination-controls";
+import { useAppContext } from "@/context/AppContext"; // Import context
 
 interface BudgetListProps {
   budgets: Budget[];
-  onDelete: (id: string) => void;
-  // onEdit?: (budget: Budget) => void; // Optional: Add edit functionality later
+  onDelete: (id: string) => Promise<void> | void; // Update signature
   currentPage: number;
   totalPages: number;
   onPageChange: (page: number) => void;
@@ -43,21 +41,17 @@ interface BudgetListProps {
 export function BudgetList({
     budgets,
     onDelete,
-    /*, onEdit */
     currentPage,
     totalPages,
     onPageChange,
     itemsPerPage,
     totalItems
 }: BudgetListProps) {
+    const { isMutating } = useAppContext(); // Get mutation state
 
-  const handleDelete = (id: string, category: string) => {
-    onDelete(id);
-    toast({
-        title: "Budget Deleted",
-        description: `Budget for ${category} has been removed.`,
-        variant: "destructive",
-      });
+  const handleDelete = async (id: string, category: string) => {
+    // Toast is handled by the page/action now
+    await onDelete(id);
   }
 
   if (!budgets.length && totalItems === 0) {
@@ -69,10 +63,10 @@ export function BudgetList({
   }
 
   return (
-    <div className="flex flex-col h-full"> {/* Ensure container takes height */}
-        <ScrollArea className="flex-grow rounded-md border"> {/* Use flex-grow */}
+    <div className="flex flex-col h-full">
+        <ScrollArea className="flex-grow rounded-md border">
             <Table>
-                <TableHeader className="sticky top-0 bg-secondary z-10">{/* Ensure no whitespace */}
+                <TableHeader className="sticky top-0 bg-secondary z-10">
                 <TableRow>
                     <TableHead>Category</TableHead>
                     <TableHead>Period</TableHead>
@@ -92,17 +86,6 @@ export function BudgetList({
                             {formatCurrency(budget.amount)}
                         </TableCell>
                         <TableCell className="text-right space-x-1">
-                            {/* Edit Button (Optional Future Feature)
-                            <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => onEdit?.(budget)} // Call edit handler if provided
-                            aria-label="Edit budget"
-                            disabled // Disable for now
-                            >
-                            <Edit className="h-4 w-4" />
-                            </Button>
-                            */}
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
                                     <Button
@@ -110,6 +93,7 @@ export function BudgetList({
                                         size="icon"
                                         aria-label="Delete budget"
                                         className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        disabled={isMutating} // Disable during mutation
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
@@ -123,17 +107,17 @@ export function BudgetList({
                                     </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogCancel disabled={isMutating}>Cancel</AlertDialogCancel>
                                     <AlertDialogAction
                                         onClick={() => handleDelete(budget.id, budget.category)}
                                         className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                                        disabled={isMutating} // Disable during mutation
                                         >
-                                        Delete
+                                        {isMutating ? 'Deleting...' : 'Delete'}
                                     </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
-
                         </TableCell>
                         </TableRow>
                     ))

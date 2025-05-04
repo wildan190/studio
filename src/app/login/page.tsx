@@ -18,6 +18,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Briefcase } from "lucide-react"; // Optional: for logo
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 const loginFormSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -27,8 +28,10 @@ const loginFormSchema = z.object({
 type LoginFormValues = z.infer<typeof loginFormSchema>;
 
 export default function LoginPage() {
-  const { login, isClient } = useAppContext(); // Get login function from context
-  const [isLoading, setIsLoading] = useState(false);
+   // Use isLoading for initial page load check, isMutating for form submission
+  const { login, isClient, authChecked, isMutating } = useAppContext();
+  const [isSubmitting, setIsSubmitting] = useState(false); // Local state for form submission
+
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
@@ -38,24 +41,40 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = (values: LoginFormValues) => {
-    setIsLoading(true);
-    // Simulate async operation if needed, otherwise call login directly
-    const success = login(values.username, values.password);
-    if (!success) {
-        setIsLoading(false); // Stop loading if login fails
-    }
-    // Redirect is handled within the AppContext's useEffect now
+  const onSubmit = async (values: LoginFormValues) => {
+     setIsSubmitting(true); // Indicate submission start
+     try {
+        await login(values.username, values.password);
+        // Redirect is handled within the AppContext's useEffect now
+     } catch (error) {
+        // Error toast is likely handled within the login function itself
+        console.error("Login submission error:", error)
+     } finally {
+        setIsSubmitting(false); // Indicate submission end regardless of outcome
+     }
   };
 
-   // Optional: Show loading state until client context is ready
-   if (!isClient) {
+   // Show skeleton while waiting for client and auth check
+   if (!isClient || !authChecked) {
         return (
-         <div className="flex items-center justify-center min-h-screen bg-background">
-             <Briefcase className="h-12 w-12 animate-pulse text-primary" />
+         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-secondary/30">
+             <Card className="w-full max-w-sm shadow-xl p-6">
+                 <div className="flex justify-center mb-4">
+                    <Skeleton className="h-12 w-12 rounded-full" />
+                 </div>
+                 <Skeleton className="h-6 w-3/4 mx-auto mb-2" />
+                 <Skeleton className="h-4 w-full mx-auto mb-6" />
+                 <Skeleton className="h-10 w-full mb-4" />
+                 <Skeleton className="h-10 w-full mb-4" />
+                 <Skeleton className="h-10 w-full" />
+             </Card>
          </div>
          );
    }
+
+   // isMutating reflects ongoing background operations from context (like data fetching after login)
+   // isSubmitting reflects the local form submission process
+   const disableForm = isSubmitting || isMutating;
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-background to-secondary/30">
@@ -77,7 +96,7 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>Username</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter your username" {...field} disabled={isLoading} />
+                      <Input placeholder="Enter your username" {...field} disabled={disableForm} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -90,14 +109,14 @@ export default function LoginPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" placeholder="Enter your password" {...field} disabled={isLoading} />
+                      <Input type="password" placeholder="Enter your password" {...field} disabled={disableForm} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
-                 {isLoading ? 'Logging in...' : 'Login'}
+              <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={disableForm}>
+                 {isSubmitting ? 'Logging in...' : 'Login'}
               </Button>
             </form>
           </Form>

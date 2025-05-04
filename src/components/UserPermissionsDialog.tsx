@@ -14,40 +14,55 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import type { User } from "@/types";
-import { MANAGEABLE_PATHS } from "@/lib/constants"; // Import manageable paths
+import { MANAGEABLE_PATHS } from "@/lib/constants";
+import { useAppContext } from "@/context/AppContext"; // Import context
+
 
 interface UserPermissionsDialogProps {
   user: User | null;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (userId: string, permissions: string[]) => void;
+  onSave: (userId: string, permissions: string[]) => Promise<void> | void; // Update signature
 }
 
 export function UserPermissionsDialog({ user, isOpen, onClose, onSave }: UserPermissionsDialogProps) {
+  const { isMutating } = useAppContext(); // Get mutation state
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
 
   useEffect(() => {
-    // Initialize selected permissions when the dialog opens or user changes
     if (user) {
-      setSelectedPermissions(user.permissions || []);
+       // Ensure we use the permissions from the user object, default if undefined
+       setSelectedPermissions(user.permissions || (user.role === 'superadmin' ? MANAGEABLE_PATHS.map(p => p.path) : DEFAULT_ALLOWED_PATHS));
     } else {
-        setSelectedPermissions([]); // Reset if no user
+        setSelectedPermissions([]);
     }
   }, [user, isOpen]);
 
   const handleCheckboxChange = (path: string, checked: boolean | "indeterminate") => {
-    setSelectedPermissions(prev =>
-      checked ? [...prev, path] : prev.filter(p => p !== path)
-    );
+    setSelectedPermissions(prev => {
+        const newPermissions = checked ? [...prev, path] : prev.filter(p => p !== path);
+        // Ensure dashboard ('/') is always included for non-superadmins
+        if (user?.role !== 'superadmin' && !newPermissions.includes('/')) {
+            newPermissions.push('/');
+        }
+        return newPermissions;
+    });
   };
 
-  const handleSaveChanges = () => {
+  const handleSaveChanges = async () => {
     if (user) {
-      onSave(user.id, selectedPermissions);
+        // Ensure dashboard is included one last time before saving
+        let finalPermissions = [...selectedPermissions];
+        if (user.role !== 'superadmin' && !finalPermissions.includes('/')) {
+            finalPermissions.push('/');
+        }
+        await onSave(user.id, finalPermissions);
     }
   };
 
-  if (!user) return null; // Don't render if no user is selected
+  if (!user) return null;
+
+    const isSuperAdmin = user.role === 'superadmin';
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -55,37 +70,41 @@ export function UserPermissionsDialog({ user, isOpen, onClose, onSave }: UserPer
         <DialogHeader>
           <DialogTitle>Manage Permissions for {user.username}</DialogTitle>
           <DialogDescription>
-            Select the pages this user can access. Superadmins always have access to all pages.
+             Select the pages this user can access. Superadmins always have access to all pages. Dashboard access is always granted.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
-          {MANAGEABLE_PATHS.map(({ path, label }) => (
-            <div key={path} className="flex items-center space-x-2">
-              <Checkbox
-                id={`permission-${path.replace('/', '')}`} // Create unique ID
-                checked={selectedPermissions.includes(path)}
-                onCheckedChange={(checked) => handleCheckboxChange(path, checked)}
-                disabled={user.role === 'superadmin'} // Disable for superadmin
-              />
-              <Label htmlFor={`permission-${path.replace('/', '')}`} className="cursor-pointer">
-                {label} ({path})
-              </Label>
-            </div>
-          ))}
-           {user.role === 'superadmin' && (
+          {MANAGEABLE_PATHS.map(({ path, label }) => {
+              // Disable checkbox for '/' if user is not superadmin, as it's always required
+              const isDisabled = isSuperAdmin || (path === '/' && !isSuperAdmin) || isMutating;
+              return (
+                  <div key={path} className="flex items-center space-x-2">
+                      <Checkbox
+                          id={`permission-${path.replace('/', '')}`}
+                          checked={selectedPermissions.includes(path)}
+                          onCheckedChange={(checked) => handleCheckboxChange(path, checked)}
+                          disabled={isDisabled}
+                      />
+                      <Label
+                          htmlFor={`permission-${path.replace('/', '')}`}
+                          className={isDisabled ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer"}
+                      >
+                          {label} ({path}) {path === '/' && !isSuperAdmin ? '(Required)' : ''}
+                      </Label>
+                  </div>
+              );
+           })}
+           {isSuperAdmin && (
                 <p className="text-sm text-muted-foreground italic">Superadmins automatically have access to all pages.</p>
            )}
-           {user.role !== 'superadmin' && !selectedPermissions.includes('/') && (
-                 <p className="text-sm text-destructive">Note: Dashboard access ('/') is required and cannot be removed.</p>
-            )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={isMutating}>Cancel</Button>
           <Button
             onClick={handleSaveChanges}
-            disabled={user.role === 'superadmin'} // Disable save for superadmin
+            disabled={isSuperAdmin || isMutating} // Disable save for superadmin or during mutation
           >
-                Save Changes
+                {isMutating ? 'Saving...' : 'Save Changes'}
           </Button>
         </DialogFooter>
       </DialogContent>

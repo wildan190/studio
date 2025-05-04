@@ -1,23 +1,25 @@
 "use client";
 
 import * as React from "react";
-import { useAppContext } from '@/context/AppContext'; // Import useAppContext
+import { useAppContext } from '@/context/AppContext';
 import { BudgetForm } from "@/components/BudgetForm";
 import { BudgetList } from "@/components/BudgetList";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { ITEMS_PER_PAGE } from "@/lib/constants"; // Import items per page constant
-
+import { ITEMS_PER_PAGE } from "@/lib/constants";
+import { Skeleton } from "@/components/ui/skeleton"; // Import Skeleton
 
 export default function BudgetsPage() {
   const {
     budgets,
     handleAddBudget,
     handleDeleteBudget,
+    currentUser, // Needed for add/delete actions implicitly
+    isLoading, // Use loading state from context
+    isMutating, // Use mutating state from context
     isClient,
-    uuidLoaded,
-    authChecked // Get authChecked status
-  } = useAppContext(); // Get state and handlers from context
+    authChecked
+  } = useAppContext();
 
     const [currentPage, setCurrentPage] = React.useState(1);
 
@@ -26,7 +28,8 @@ export default function BudgetsPage() {
         return [...budgets].sort((a, b) => {
             const categoryComparison = a.category.localeCompare(b.category);
             if (categoryComparison !== 0) return categoryComparison;
-            return a.period.localeCompare(b.period);
+            // Ensure period exists before comparing (though it should always exist)
+            return (a.period || '').localeCompare(b.period || '');
         });
     }, [budgets]);
 
@@ -53,26 +56,44 @@ export default function BudgetsPage() {
        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
      }
 
-    // Updated Loading State: Wait for client, uuid, and auth check
-    if (!isClient || !uuidLoaded || !authChecked) {
-    return (
-      <div className="flex flex-1 flex-col p-4 md:p-6">
-        <div className="space-y-6">
-          <div className="h-10 w-48 bg-muted rounded-lg animate-pulse"></div>
-          <div className="h-96 bg-muted rounded-lg animate-pulse"></div>
+     const handleFormSubmit = async (data: Omit<Budget, 'id'>) => {
+         if (!currentUser) return; // Should be logged in to reach here
+         await handleAddBudget({ ...data, userId: currentUser.id });
+     };
+
+     const handleDelete = async (id: string) => {
+         await handleDeleteBudget(id);
+     };
+
+
+    // --- Loading State ---
+    if (isLoading || !isClient || !authChecked) {
+        return (
+        <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+            <Skeleton className="h-8 w-48 mb-4" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="md:col-span-1 space-y-4">
+                 <Skeleton className="h-[250px] w-full rounded-lg" />
+            </div>
+            <div className="md:col-span-2 space-y-4">
+                <Skeleton className="h-12 w-full rounded-lg" />
+                <Skeleton className="h-[300px] w-full rounded-lg" />
+                <Skeleton className="h-10 w-full rounded-lg" /> {/* Pagination skeleton */}
+            </div>
+            </div>
+             <Separator className="my-4" />
+            <div className="text-center text-muted-foreground text-sm">Loading Budgets...</div>
         </div>
-        <footer className="mt-12 text-center text-muted-foreground text-sm">
-            <Separator className="my-4" />
-             Loading Budgets...
-        </footer>
-      </div>
-    );
-  }
+        );
+    }
 
   // Render content if authenticated and ready
   return (
     <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <h1 className="text-2xl font-semibold tracking-tight">Manage Budgets</h1>
+         {isMutating && ( // Optional: Show a subtle indicator during mutations
+            <div className="text-sm text-muted-foreground italic mb-2">Processing...</div>
+         )}
         <section id="budgets" className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
@@ -82,12 +103,13 @@ export default function BudgetsPage() {
                              <CardDescription>Add a new budget or update an existing one by entering the same category and period.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <BudgetForm onSubmit={handleAddBudget} existingCategories={budgets.map(b => b.category)} />
+                             {/* Pass the async handler to the form */}
+                            <BudgetForm onSubmit={handleFormSubmit} existingCategories={budgets.map(b => b.category)} />
                         </CardContent>
                     </Card>
                 </div>
                  <div className="md:col-span-2">
-                    <Card className="shadow-md rounded-lg flex flex-col"> {/* Added flex flex-col */}
+                    <Card className="shadow-md rounded-lg flex flex-col">
                         <CardHeader>
                             <div className="flex justify-between items-start">
                                 <div>
@@ -100,15 +122,14 @@ export default function BudgetsPage() {
                                 </div>
                             </div>
                         </CardHeader>
-                        {/* Removed CardContent wrapping BudgetList */}
                          <BudgetList
                             budgets={paginatedBudgets}
-                            onDelete={handleDeleteBudget}
+                            onDelete={handleDelete} // Pass the async handler
                             currentPage={currentPage}
                             totalPages={totalPages}
                             onPageChange={handlePageChange}
                             itemsPerPage={ITEMS_PER_PAGE}
-                            totalItems={budgets.length} // Use total budgets length
+                            totalItems={budgets.length}
                             />
                     </Card>
                  </div>
@@ -117,4 +138,3 @@ export default function BudgetsPage() {
     </main>
   );
 }
-
