@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -38,8 +39,8 @@ export default function UsersPage() {
      );
    }
 
+  // Use a div instead of main, as ClientLayout provides the main structure
   return (
-    // Use a div instead of main, as ClientLayout provides the main structure
     <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
@@ -82,5 +83,5 @@ export default function UsersPage() {
             </Card>
         </section>
     </div>
-  ); // Removed semicolon from here
-} // Closing brace for the function scope
+  );
+}
