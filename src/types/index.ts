@@ -9,7 +9,7 @@ export interface Transaction {
   id: string;
   type: TransactionType;
   description: string; // Source for income, Category for expense
-  amount: number; // Prisma Decimal/Float maps to number
+  amount: number; // Use number in the application type (converted from Decimal)
   date: Date;
   // userId is usually not needed directly on the client transaction object
   // userId?: string;
@@ -18,7 +18,7 @@ export interface Transaction {
 export interface Budget {
   id: string;
   category: string; // Matches expense transaction description/category
-  amount: number; // Prisma Decimal/Float maps to number
+  amount: number; // Use number in the application type (converted from Decimal)
   period: BudgetPeriod;
    // userId is usually not needed directly on the client budget object
   // userId?: string;

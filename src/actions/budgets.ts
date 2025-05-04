@@ -5,19 +5,22 @@ import { z } from 'zod';
 import prisma from '@/lib/db'; // Import Prisma client instance
 import type { Budget, BudgetPeriod as AppBudgetPeriod } from '@/types';
 import { BudgetPeriod as PrismaBudgetPeriod } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library'; // Import Decimal
 
 // --- Schemas ---
 
+// Prisma returns Decimal type, which needs conversion for client-side (usually to number)
 const BudgetSchema = z.object({
   id: z.string().uuid(),
   category: z.string(),
-  amount: z.number(), // Prisma returns number for Decimal/Float
+  amount: z.instanceof(Decimal), // Expect Prisma Decimal type
   period: z.nativeEnum(PrismaBudgetPeriod), // Use Prisma enum
   userId: z.string().uuid(), // Renamed from user_id
 });
 
 const AddBudgetInputSchema = z.object({
   category: z.string().min(1, 'Category is required'),
+  // Use number for input coercion, Prisma handles conversion to Decimal
   amount: z.coerce.number().positive('Budget amount must be positive'),
   period: z.nativeEnum(PrismaBudgetPeriod, { required_error: 'Period is required' }),
   userId: z.string().uuid('User ID is required'),
@@ -27,11 +30,11 @@ type AddBudgetInput = z.infer<typeof AddBudgetInputSchema>;
 
 // --- Helper Functions ---
 
-// Map Prisma Budget to Application Budget Type
+// Map Prisma Budget (with Decimal amount) to Application Budget Type (with number amount)
 const mapPrismaBudgetToApp = (prismaBudget: NonNullable<Awaited<ReturnType<typeof prisma.budget.findUnique>>>): Budget => ({
     id: prismaBudget.id,
     category: prismaBudget.category,
-    amount: prismaBudget.amount, // Prisma Decimal is number
+    amount: prismaBudget.amount.toNumber(), // Convert Prisma Decimal to number
     period: prismaBudget.period as AppBudgetPeriod, // Cast to AppBudgetPeriod
 });
 
@@ -78,7 +81,8 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
         // Case-insensitive search requires finding all and filtering, or DB setup
         // Prisma doesn't have a built-in case-insensitive unique find for this complex key easily.
         // Alternative: Fetch all for the user/period and filter in code.
-        category: { mode: 'insensitive', equals: categoryLower }, // Use insensitive mode if DB supports
+        // Using Prisma's insensitive mode for query if DB supports it
+        category: { mode: 'insensitive', equals: categoryLower },
       }
     });
 
@@ -86,9 +90,16 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
     if (existingBudget) {
       // 2. Update existing budget
       upsertedBudget = await prisma.budget.update({
-        where: { id: existingBudget.id },
+        where: {
+           // Use the unique composite key
+           userId_category_period: {
+             userId: existingBudget.userId,
+             category: existingBudget.category, // Use the actual category from the found record
+             period: existingBudget.period,
+           }
+        },
         data: {
-          amount: amount,
+          amount: amount, // Prisma accepts number, converts to Decimal
           category: category, // Update category to potentially fix casing
           updatedAt: new Date(), // Ensure updated_at is set
         },
@@ -100,7 +111,7 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
         data: {
           userId: userId,
           category: category, // Store original casing
-          amount: amount,
+          amount: amount, // Prisma accepts number, converts to Decimal
           period: period,
         },
       });
@@ -112,9 +123,16 @@ export async function addOrUpdateBudgetAction(data: AddBudgetInput): Promise<Bud
     revalidatePath('/reports');
     return mapPrismaBudgetToApp(upsertedBudget);
 
-  } catch (error) {
+  } catch (error: any) { // Catch specific Prisma error
     console.error('Error adding or updating budget with Prisma:', error);
-    // Handle potential unique constraint issues if case-insensitive check fails or isn't perfect
+    if (error.code === 'P2002' && error.meta?.target?.includes('userId_category_period')) {
+        // Handle the unique constraint violation specifically
+        // This might occur in race conditions or if the case-insensitive findFirst wasn't perfect
+        console.warn(`Budget unique constraint violation for user ${userId}, category ${category}, period ${period}. Attempting update again or inform user.`);
+        // You might attempt the update again here, or throw a more specific user-facing error
+        throw new Error(`A budget for category '${category}' and period '${period}' already exists. You might need to edit the existing one.`);
+    }
+    // Handle other potential unique constraint issues if case-insensitive check fails or isn't perfect
     throw new Error('Failed to save budget.');
   }
 }
@@ -133,7 +151,13 @@ export async function deleteBudgetAction(id: string, userId: string): Promise<vo
      });
 
      if (!budget) {
-         throw new Error('Budget not found.');
+         // Changed to return instead of throw to avoid breaking flow if already deleted
+         console.warn(`Budget with ID ${id} not found for deletion.`);
+         revalidatePath('/budgets'); // Revalidate even if not found, to update the list
+         revalidatePath('/');
+         revalidatePath('/reports');
+         return;
+         // throw new Error('Budget not found.');
      }
      if (budget.userId !== userId) {
          throw new Error('User does not have permission to delete this budget.');
@@ -150,8 +174,11 @@ export async function deleteBudgetAction(id: string, userId: string): Promise<vo
   } catch (error: any) {
     console.error('Error deleting budget with Prisma:', error);
     if (error.code === 'P2025') { // Record to delete not found
-        console.warn(`Budget with ID ${id} not found for deletion (P2025).`);
-        // throw new Error('Budget not found.'); // Or treat as success
+        console.warn(`Budget with ID ${id} not found for deletion (P2025). Already deleted?`);
+        // Treat as success as the item is gone
+        revalidatePath('/budgets');
+        revalidatePath('/');
+        revalidatePath('/reports');
     } else if (error instanceof Error && (error.message.includes('not found') || error.message.includes('permission'))) {
         throw error; // Re-throw specific known errors
     } else {

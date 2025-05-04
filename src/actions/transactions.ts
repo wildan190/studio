@@ -5,6 +5,7 @@ import { z } from 'zod';
 import prisma from '@/lib/db'; // Import Prisma client instance
 import type { Transaction, TransactionType as AppTransactionType } from '@/types';
 import { TransactionType as PrismaTransactionType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library'; // Import Decimal
 
 // --- Schemas ---
 
@@ -12,7 +13,7 @@ const TransactionSchema = z.object({
   id: z.string().uuid(),
   type: z.nativeEnum(PrismaTransactionType), // Use Prisma enum
   description: z.string(),
-  amount: z.number(), // Prisma returns number for Decimal/Float
+  amount: z.instanceof(Decimal), // Expect Prisma Decimal type
   date: z.date(),
   userId: z.string().uuid(), // Renamed from user_id for consistency
 });
@@ -20,6 +21,7 @@ const TransactionSchema = z.object({
 const AddTransactionInputSchema = z.object({
   type: z.nativeEnum(PrismaTransactionType),
   description: z.string().min(1, 'Description is required'),
+  // Use number for input coercion, Prisma handles conversion to Decimal
   amount: z.coerce.number().positive('Amount must be positive'),
   date: z.date({ required_error: 'Date is required' }),
   userId: z.string().uuid('User ID is required'),
@@ -28,12 +30,12 @@ type AddTransactionInput = z.infer<typeof AddTransactionInputSchema>;
 
 // --- Helper Functions ---
 
-// Map Prisma Transaction to Application Transaction Type
+// Map Prisma Transaction (with Decimal amount) to Application Transaction Type (with number amount)
 const mapPrismaTransactionToApp = (prismaTransaction: NonNullable<Awaited<ReturnType<typeof prisma.transaction.findUnique>>>): Transaction => ({
   id: prismaTransaction.id,
   type: prismaTransaction.type as AppTransactionType, // Cast to AppTransactionType
   description: prismaTransaction.description,
-  amount: prismaTransaction.amount, // Prisma Decimal is number; ensure compatibility if needed
+  amount: prismaTransaction.amount.toNumber(), // Convert Prisma Decimal to number
   date: new Date(prismaTransaction.date), // Ensure date is a Date object
 });
 
@@ -72,7 +74,7 @@ export async function addTransactionAction(data: AddTransactionInput): Promise<T
         userId: userId,
         type: type,
         description: description,
-        amount: amount,
+        amount: amount, // Prisma accepts number, converts to Decimal
         date: date, // Prisma expects Date object
       },
     });
@@ -99,7 +101,13 @@ export async function deleteTransactionAction(id: string, userId: string): Promi
     });
 
     if (!transaction) {
-        throw new Error('Transaction not found.');
+         // Changed to return instead of throw to avoid breaking flow if already deleted
+         console.warn(`Transaction with ID ${id} not found for deletion.`);
+         revalidatePath('/transactions'); // Revalidate even if not found, to update the list
+         revalidatePath('/');
+         revalidatePath('/reports');
+         return;
+        // throw new Error('Transaction not found.');
     }
     if (transaction.userId !== userId) {
          throw new Error('User does not have permission to delete this transaction.');
@@ -116,10 +124,12 @@ export async function deleteTransactionAction(id: string, userId: string): Promi
   } catch (error: any) {
     console.error('Error deleting transaction with Prisma:', error);
      if (error.code === 'P2025') { // Record to delete not found
-         // This might happen in a race condition, treat as success or specific error
-         console.warn(`Transaction with ID ${id} not found for deletion (P2025).`);
-         // Depending on desired behavior, you might not throw here
-         // throw new Error('Transaction not found.');
+         // This might happen in a race condition, treat as success
+         console.warn(`Transaction with ID ${id} not found for deletion (P2025). Already deleted?`);
+         // Treat as success as the item is gone
+         revalidatePath('/transactions');
+         revalidatePath('/');
+         revalidatePath('/reports');
      } else if (error instanceof Error && (error.message.includes('not found') || error.message.includes('permission'))) {
          throw error; // Re-throw specific known errors
      } else {
