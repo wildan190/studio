@@ -96,7 +96,7 @@ export function UserList({
        <div className="flex flex-col h-full"> {/* Ensure container takes height */}
             <ScrollArea className="flex-grow rounded-md border"> {/* Use flex-grow */}
             <Table>
-                <TableHeader className="sticky top-0 bg-secondary z-10"> {/* Add z-index */}
+                <TableHeader className="sticky top-0 bg-secondary z-10">{/* Ensure no whitespace */}
                 <TableRow>
                     <TableHead>Username</TableHead>
                     <TableHead>Role</TableHead>

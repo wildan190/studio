@@ -44,7 +44,7 @@ export function TransactionList({
      <div className="flex flex-col h-full"> {/* Ensure container takes height */}
         <ScrollArea className="flex-grow rounded-md border"> {/* Use flex-grow to take available space */}
             <Table>
-            <TableHeader className="sticky top-0 bg-secondary z-10"> {/* Add z-index */}
+            <TableHeader className="sticky top-0 bg-secondary z-10">{/* Ensure no whitespace */}
                 <TableRow>
                 <TableHead>Type</TableHead>
                 <TableHead>Description</TableHead>

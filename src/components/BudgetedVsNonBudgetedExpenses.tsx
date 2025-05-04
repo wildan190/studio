@@ -76,7 +76,7 @@ export function BudgetedVsNonBudgetedExpenses({ transactions, budgets }: Budgete
         {expenseList.length > 0 ? (
           <ScrollArea className="h-[250px] rounded-md border">
             <Table>
-              <TableHeader className="sticky top-0 bg-muted/50">
+              <TableHeader className="sticky top-0 bg-muted/50">{/* Ensure no whitespace */}
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Description</TableHead>
