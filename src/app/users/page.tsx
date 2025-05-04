@@ -1,4 +1,3 @@
-
 "use client";
 
 import * as React from "react";
@@ -15,7 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import type { User } from "@/types"; // Import User type
 
 export default function UsersPage() {
-  const { currentUser, users, isClient, authChecked, addUser, deleteUser, updateUser } = useAppContext(); // Add updateUser
+  const { currentUser, users, isClient, authChecked, addUser, deleteUser, updateUser, updateUserPermissions } = useAppContext(); // Add updateUserPermissions
   const [editingUser, setEditingUser] = useState<User | null>(null); // State for user being edited
 
   if (!isClient || !authChecked) {
@@ -95,6 +94,11 @@ export default function UsersPage() {
         setEditingUser(null);
     };
 
+    // Renamed to avoid conflict, pass directly to UserList
+    const handleUpdatePermissions = (userId: string, permissions: string[]) => {
+        updateUserPermissions(userId, permissions);
+    };
+
 
     // Main content render
     return (
@@ -109,7 +113,7 @@ export default function UsersPage() {
                 <CardHeader>
                 <CardTitle className="text-destructive">Security Warning</CardTitle>
                 <CardDescription className="text-destructive/90">
-                    <strong>Important:</strong> This user management system uses local storage and handles passwords insecurely for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing.
+                    <strong>Important:</strong> This user management system uses local storage and handles passwords insecurely for demonstration purposes only. <strong>Do not use this in a production environment.</strong> Implement proper server-side authentication and password hashing. Permissions are also enforced client-side, which is insecure.
                 </CardDescription>
                 </CardHeader>
              </Card>
@@ -137,10 +141,16 @@ export default function UsersPage() {
                 <Card className="shadow-md rounded-lg">
                     <CardHeader>
                     <CardTitle>Current Users</CardTitle>
-                    <CardDescription>List of all registered users and their roles.</CardDescription>
+                    <CardDescription>List of all registered users and their roles. Edit, delete, or manage permissions.</CardDescription>
                     </CardHeader>
                     <CardContent>
-                        <UserList users={users} onDelete={handleDeleteUser} onEdit={handleEditUser} currentUser={currentUser}/>
+                        <UserList
+                            users={users}
+                            onDelete={handleDeleteUser}
+                            onEdit={handleEditUser}
+                            currentUser={currentUser}
+                            onUpdatePermissions={handleUpdatePermissions} // Pass handler
+                         />
                     </CardContent>
                  </Card>
              </div>

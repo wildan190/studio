@@ -27,4 +27,5 @@ export interface User {
   // !! Passwords should be securely hashed on a server.
   passwordHash: string; // For demo purposes, storing plaintext/simple hash
   role: Role;
+  permissions: string[]; // Array of allowed route paths (e.g., '/', '/transactions')
 }

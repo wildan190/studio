@@ -17,7 +17,8 @@ import {
   SidebarMenuButton,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button'; // Import Button
-import { Home, Briefcase, BarChart, List, LogOut, Users } from 'lucide-react'; // Added List, LogOut, Users icons
+import { Home, Briefcase, BarChart, List, LogOut, Users, ShieldAlert } from 'lucide-react'; // Added List, LogOut, Users icons
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card'; // Import Card components
 
 export default function ClientLayout({
   children,
@@ -39,6 +40,18 @@ export default function ClientLayout({
     return <>{children}</>;
   }
 
+   // --- Permission Check ---
+   // Superadmins can access everything.
+   // Users page access is already handled by role check in AppContext redirect.
+   // For other pages, check the user's permissions array.
+   const canAccessPage =
+       currentUser.role === 'superadmin' ||
+       pathname === '/' || // All logged-in users can access dashboard
+       pathname === '/login' || // Allow access to login page (though redirect handles this)
+       pathname === '/users' || // Role check is done elsewhere
+       (currentUser.permissions?.includes(pathname));
+
+
   // If user is logged in, render the full admin layout
   return (
     <SidebarProvider>
@@ -57,33 +70,41 @@ export default function ClientLayout({
            <p className="text-xs text-muted-foreground mt-1">Welcome, {currentUser.username}!</p>
         </SidebarHeader>
         <SidebarContent className="p-2">
-          {/* Navigation Menu */}
+          {/* Navigation Menu - Conditionally render based on permissions */}
           <SidebarMenu>
-             <SidebarMenuItem>
-                <SidebarMenuButton href="/" tooltip="Dashboard" isActive={pathname === '/'}>
-                   <Home />
-                   <span>Dashboard</span>
-                </SidebarMenuButton>
-             </SidebarMenuItem>
-             <SidebarMenuItem>
-                 <SidebarMenuButton href="/transactions" tooltip="Transactions" isActive={pathname.startsWith('/transactions')}>
-                   <List />
-                   <span>Transactions</span>
-                 </SidebarMenuButton>
-             </SidebarMenuItem>
-             <SidebarMenuItem>
-                 <SidebarMenuButton href="/budgets" tooltip="Budgets" isActive={pathname.startsWith('/budgets')}>
-                   <Briefcase />
-                   <span>Budgets</span>
-                 </SidebarMenuButton>
-             </SidebarMenuItem>
-             <SidebarMenuItem>
-                 <SidebarMenuButton href="/reports" tooltip="Reports" isActive={pathname.startsWith('/reports')}>
-                   <BarChart />
-                   <span>Reports</span>
-                 </SidebarMenuButton>
-             </SidebarMenuItem>
-              {/* User Management Link (Admin Only) */}
+             {currentUser.permissions?.includes('/') && (
+                 <SidebarMenuItem>
+                    <SidebarMenuButton href="/" tooltip="Dashboard" isActive={pathname === '/'}>
+                       <Home />
+                       <span>Dashboard</span>
+                    </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
+             {currentUser.permissions?.includes('/transactions') && (
+                 <SidebarMenuItem>
+                     <SidebarMenuButton href="/transactions" tooltip="Transactions" isActive={pathname.startsWith('/transactions')}>
+                       <List />
+                       <span>Transactions</span>
+                     </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
+             {currentUser.permissions?.includes('/budgets') && (
+                 <SidebarMenuItem>
+                     <SidebarMenuButton href="/budgets" tooltip="Budgets" isActive={pathname.startsWith('/budgets')}>
+                       <Briefcase />
+                       <span>Budgets</span>
+                     </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
+              {currentUser.permissions?.includes('/reports') && (
+                 <SidebarMenuItem>
+                     <SidebarMenuButton href="/reports" tooltip="Reports" isActive={pathname.startsWith('/reports')}>
+                       <BarChart />
+                       <span>Reports</span>
+                     </SidebarMenuButton>
+                 </SidebarMenuItem>
+             )}
+              {/* User Management Link (Superadmin Only) */}
              {currentUser.role === 'superadmin' && (
                  <SidebarMenuItem>
                      <SidebarMenuButton href="/users" tooltip="User Management" isActive={pathname.startsWith('/users')}>
@@ -116,8 +137,23 @@ export default function ClientLayout({
            </div>
             {/* Mobile has trigger in sidebar header */}
          </header>
-         {/* Render page content */}
-         {children}
+         {/* Render page content or Access Denied message */}
+          {canAccessPage ? (
+                children
+            ) : (
+                 <div className="flex flex-1 items-center justify-center p-4 md:p-6">
+                     <Card className="w-full max-w-md shadow-lg border-destructive">
+                         <CardHeader className="flex flex-row items-center gap-4">
+                              <ShieldAlert className="h-8 w-8 text-destructive" />
+                              <CardTitle className="text-destructive">Access Denied</CardTitle>
+                         </CardHeader>
+                         <CardContent>
+                             <p className="text-muted-foreground">You do not have permission to access this page ({pathname}). Please contact an administrator if you believe this is an error.</p>
+                             <Button variant="outline" onClick={() => router.push('/')} className="mt-4">Go to Dashboard</Button>
+                         </CardContent>
+                     </Card>
+                 </div>
+             )}
       </SidebarInset>
     </SidebarProvider>
   );
