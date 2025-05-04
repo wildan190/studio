@@ -6,7 +6,7 @@ import type { v4 as uuidv4 } from 'uuid'; // Import type only initially
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Removed Tabs imports as navigation is handled by sidebar now
 import { TransactionForm } from "@/components/TransactionForm";
 import { TransactionList } from "@/components/TransactionList";
 import { CashFlowSummary } from "@/components/CashFlowSummary";
@@ -89,18 +89,14 @@ export default function Home() {
   // Render loading state or skeleton if not client or uuid not loaded yet
   if (!isClient || !uuidLoaded) {
     return (
-      <div className="container mx-auto p-4 md:p-8 max-w-4xl">
-        <header className="mb-8 text-center">
-          <h1 className="text-4xl font-bold mb-2 text-primary">BizFlow</h1>
-          <p className="text-muted-foreground">Simple Cashflow Management for UMKM</p>
-        </header>
-        {/* Basic Skeleton or Loading State */}
+      <div className="flex flex-1 flex-col p-4 md:p-6">
+        {/* Basic Skeleton or Loading State inside the main content area */}
         <div className="space-y-6">
-          <div className="h-10 w-48 bg-muted rounded-lg animate-pulse mx-auto"></div>
+          <div className="h-10 w-48 bg-muted rounded-lg animate-pulse"></div>
           <div className="h-60 bg-muted rounded-lg animate-pulse"></div>
           <div className="h-80 bg-muted rounded-lg animate-pulse"></div>
         </div>
-        <footer className="mt-12 text-center text-muted-foreground text-sm">
+         <footer className="mt-12 text-center text-muted-foreground text-sm">
             <Separator className="my-4" />
              Loading...
         </footer>
@@ -109,51 +105,42 @@ export default function Home() {
   }
 
   // Render the main application UI once client and uuid are ready
+  // Removed the outer container div, SidebarInset provides the main area
+  // Removed header and footer, handled in layout.tsx
   return (
-    <div className="container mx-auto p-4 md:p-8 max-w-4xl">
-      <header className="mb-8 text-center">
-        <h1 className="text-4xl font-bold mb-2 text-primary">BizFlow</h1>
-        <p className="text-muted-foreground">Simple Cashflow Management for UMKM</p>
-      </header>
-
-      <main className="space-y-6">
-        <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className="grid w-full grid-cols-3 mb-6">
-            <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-            <TabsTrigger value="budgets">Budgets</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
-            {/* <TabsTrigger value="planning">Planning</TabsTrigger> */}
-          </TabsList>
-
-          {/* Dashboard Tab */}
-          <TabsContent value="dashboard" className="space-y-6">
+    <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+        {/* Dashboard Section */}
+        <section id="dashboard" className="space-y-6">
             <CashFlowSummary transactions={transactions} />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="md:col-span-1">
+            <div className="md:col-span-1">
                 <Card className="shadow-md rounded-lg">
-                  <CardHeader>
+                <CardHeader>
                     <CardTitle className="text-lg">Add New Transaction</CardTitle>
-                  </CardHeader>
-                  <CardContent>
+                </CardHeader>
+                <CardContent>
                     <TransactionForm onSubmit={handleAddTransaction} />
-                  </CardContent>
+                </CardContent>
                 </Card>
-              </div>
-              <div className="md:col-span-2">
-                <Card className="shadow-md rounded-lg">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Transaction History</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />
-                  </CardContent>
-                </Card>
-              </div>
             </div>
-          </TabsContent>
+            <div className="md:col-span-2">
+                <Card className="shadow-md rounded-lg">
+                <CardHeader>
+                    <CardTitle className="text-lg">Transaction History</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />
+                </CardContent>
+                </Card>
+            </div>
+            </div>
+        </section>
 
-          {/* Budgets Tab */}
-          <TabsContent value="budgets" className="space-y-6">
+        <Separator className="my-4" />
+
+        {/* Budgets Section */}
+        <section id="budgets" className="space-y-6">
+             <h2 className="text-2xl font-semibold">Budgets</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-1">
                     <Card className="shadow-md rounded-lg">
@@ -176,35 +163,16 @@ export default function Home() {
                     </Card>
                  </div>
             </div>
-          </TabsContent>
+        </section>
 
-          {/* Reports Tab */}
-          <TabsContent value="reports" className="space-y-6">
-             <ExpenseReport transactions={transactions} budgets={budgets} />
-          </TabsContent>
-
-          {/* Planning Tab - Future Implementation */}
-          {/*
-          <TabsContent value="planning">
-             <Card>
-               <CardHeader>
-                 <CardTitle>Budget Planning</CardTitle>
-               </CardHeader>
-               <CardContent>
-                 <p className="text-muted-foreground">Budget planning feature coming soon!</p>
-                 {}
-               </CardContent>
-             </Card>
-          </TabsContent>
-          */}
-
-        </Tabs>
-      </main>
-
-      <footer className="mt-12 text-center text-muted-foreground text-sm">
         <Separator className="my-4" />
-        &copy; {new Date().getFullYear()} BizFlow. Built with Next.js.
-      </footer>
-    </div>
+
+        {/* Reports Section */}
+        <section id="reports" className="space-y-6">
+            <h2 className="text-2xl font-semibold">Reports</h2>
+             <ExpenseReport transactions={transactions} budgets={budgets} />
+        </section>
+
+    </main>
   );
 }
