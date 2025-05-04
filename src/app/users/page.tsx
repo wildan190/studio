@@ -31,15 +31,17 @@ export default function UsersPage() {
    if (currentUser?.role !== 'superadmin') {
      // This shouldn't be reached if redirect logic works, but acts as a fallback
      return (
-         <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+         <div className="p-4 md:p-6"> {/* Use a div for padding */}
              <h1 className="text-2xl font-semibold tracking-tight text-destructive">Access Denied</h1>
              <p className="text-muted-foreground">You do not have permission to view this page.</p>
-         </main>
+         </div>
      );
    }
+   // The closing brace for the function was missing before this return statement
 
   return (
-    <main className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
+    // Use a div instead of main, as ClientLayout provides the main structure
+    <div className="flex flex-1 flex-col gap-4 p-4 md:gap-8 md:p-6">
         <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold tracking-tight">User Management</h1>
             {/* <Button size="sm">
@@ -80,6 +82,6 @@ export default function UsersPage() {
                 </CardContent>
             </Card>
         </section>
-    </main>
+    </div>
   );
-}
+} // Added missing closing brace for the function scope
