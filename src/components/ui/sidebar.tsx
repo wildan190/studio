@@ -1,6 +1,8 @@
+
 "use client"
 
 import * as React from "react"
+import Link from "next/link" // Import next/link
 import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"
 import { PanelLeft } from "lucide-react"
@@ -84,7 +86,9 @@ const SidebarProvider = React.forwardRef<
         }
 
         // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+        if (typeof window !== 'undefined') {
+          document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+        }
       },
       [setOpenProp, open]
     )
@@ -533,13 +537,20 @@ const sidebarMenuButtonVariants = cva(
   }
 )
 
+// Extend button props to accept 'href'
+interface SidebarMenuButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    React.AnchorHTMLAttributes<HTMLAnchorElement>, // Add Anchor attributes
+    VariantProps<typeof sidebarMenuButtonVariants> {
+  asChild?: boolean;
+  isActive?: boolean;
+  tooltip?: string | React.ComponentProps<typeof TooltipContent>;
+  href?: string; // Add href prop
+}
+
 const SidebarMenuButton = React.forwardRef<
-  HTMLButtonElement,
-  React.ComponentProps<"button"> & {
-    asChild?: boolean
-    isActive?: boolean
-    tooltip?: string | React.ComponentProps<typeof TooltipContent>
-  } & VariantProps<typeof sidebarMenuButtonVariants>
+  HTMLButtonElement | HTMLAnchorElement, // Allow both button and anchor refs
+  SidebarMenuButtonProps
 >(
   (
     {
@@ -548,33 +559,53 @@ const SidebarMenuButton = React.forwardRef<
       variant = "default",
       size = "default",
       tooltip,
+      href, // Destructure href
       className,
+      children, // Ensure children is captured
       ...props
     },
     ref
   ) => {
-    const Comp = asChild ? Slot : "button"
-    const { isMobile, state } = useSidebar()
+    const { isMobile, state, setOpenMobile } = useSidebar();
+
+    // Determine the component based on the presence of href
+    const Comp = href ? (asChild ? Slot : Link) : (asChild ? Slot : "button");
+    const compProps: any = href ? { href } : {}; // Pass href only if Link is used
+
+    // Add onClick handler to close mobile sidebar on navigation
+    const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+      if (href && isMobile) {
+        setOpenMobile(false);
+      }
+      // Call original onClick if it exists
+      if (props.onClick) {
+        props.onClick(event as React.MouseEvent<HTMLButtonElement>);
+      }
+    };
 
     const button = (
       <Comp
-        ref={ref}
+        ref={ref as any} // Use 'as any' for the ref type to handle both button and anchor
         data-sidebar="menu-button"
         data-size={size}
         data-active={isActive}
         className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-        {...props}
-      />
-    )
+        onClick={handleClick} // Add the click handler
+        {...compProps} // Pass href if it's a link
+        {...props} // Pass other props
+      >
+        {children}
+      </Comp>
+    );
 
     if (!tooltip) {
-      return button
+      return button;
     }
 
     if (typeof tooltip === "string") {
       tooltip = {
         children: tooltip,
-      }
+      };
     }
 
     return (
@@ -587,10 +618,11 @@ const SidebarMenuButton = React.forwardRef<
           {...tooltip}
         />
       </Tooltip>
-    )
+    );
   }
-)
-SidebarMenuButton.displayName = "SidebarMenuButton"
+);
+SidebarMenuButton.displayName = "SidebarMenuButton";
+
 
 const SidebarMenuAction = React.forwardRef<
   HTMLButtonElement,

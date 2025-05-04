@@ -16,6 +16,7 @@ import {
   SidebarMenuButton,
   SidebarGroup,
   SidebarGroupLabel,
+  useSidebar, // Import useSidebar
 } from '@/components/ui/sidebar';
 import { Home, Briefcase, BarChart, Settings, List } from 'lucide-react'; // Added List icon
 
@@ -25,6 +26,7 @@ export default function ClientLayout({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname(); // Get current path
+  // No need to call useSidebar here directly if only needed in the button
 
   return (
     <SidebarProvider>
