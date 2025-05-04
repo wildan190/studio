@@ -1,7 +1,8 @@
+
 "use client";
 
 import * as React from "react";
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts"; // Removed Tooltip import from recharts
 import { subDays, subWeeks, subMonths, subYears, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, format } from "date-fns";
 import {
   Card,
@@ -17,7 +18,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select"
-import { ChartContainer, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"; // Import ChartContainer and ChartConfig
+// Import ChartTooltip along with ChartTooltipContent
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import type { Transaction } from "@/types";
 
 interface CashFlowSummaryProps {
@@ -153,9 +155,10 @@ export function CashFlowSummary({ transactions }: CashFlowSummaryProps) {
                             fontSize={12}
                          />
                         <YAxis stroke="hsl(var(--foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => formatCurrency(value)}/>
-                        <Tooltip
+                        {/* Use ChartTooltip from shadcn/ui instead of recharts Tooltip */}
+                        <ChartTooltip
                           cursor={{ fill: 'hsl(var(--muted))' }}
-                          content={<ChartTooltipContent formatter={formatCurrency} nameKey="name" hideLabel />} // Use nameKey from chartData
+                          content={<ChartTooltipContent formatter={formatCurrency} nameKey="name" hideLabel />} // Pass ChartTooltipContent here
                         />
                         {/* Bar uses dataKey="value" which is defined in chartConfig */}
                         <Bar dataKey="value" radius={[4, 4, 0, 0]} />
