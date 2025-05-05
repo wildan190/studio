@@ -45,16 +45,16 @@ export default function CalendarPage() {
     }
 
     // Custom day cell renderer to show budget markers
-    const renderDay = (day: Date) => {
+    const renderDay = ({ date }: { date: Date }) => {
         // Validate the date before formatting. react-day-picker might pass invalid dates/objects for layout.
-        if (!day || !isValid(day)) {
+        if (!date || !isValid(date)) {
              // Do not log an error here, as it might be expected behavior from the library for non-date cells.
              // console.error("Invalid date passed to renderDay:", day);
              // Return an empty div for invalid/placeholder cells to avoid showing "?"
              return <div className="relative flex flex-col items-center justify-center h-full text-muted-foreground text-xs"></div>;
          }
 
-        const dateString = format(day, 'yyyy-MM-dd');
+        const dateString = format(date, 'yyyy-MM-dd');
         // Ensure budgetEvents dates are also valid before comparison
         const budgetsDueOnDay = budgetEvents.filter(event => isValid(event.date) && format(event.date, 'yyyy-MM-dd') === dateString);
 
@@ -63,7 +63,7 @@ export default function CalendarPage() {
                  {/* Default day number rendering */}
                  <span className={cn(
                      "group-hover:font-semibold", // Example hover effect
-                 )}>{format(day, 'd')}</span>
+                 )}>{format(date, 'd')}</span>
 
                 {/* Budget markers */}
                 {budgetsDueOnDay.length > 0 && (
@@ -140,7 +140,7 @@ export default function CalendarPage() {
                                 month={month}
                                 onMonthChange={setMonth}
                                 className="w-full"
-                                components={{ DayContent: renderDay }} // Use custom renderer
+                                components={{ DayContent: renderDay as (props: any) => React.JSX.Element }} // Use custom renderer
                                 classNames={{
                                     day_selected: "bg-primary text-primary-foreground hover:bg-primary/90 focus:bg-primary focus:text-primary-foreground",
                                     day_today: "bg-accent text-accent-foreground rounded-full",
